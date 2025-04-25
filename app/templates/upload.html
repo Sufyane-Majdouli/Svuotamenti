@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload CSV File</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.file.label(class="form-label") }}
+                        {{ form.file(class="form-control") }}
+                        {% if form.file.errors %}
+                            {% for error in form.file.errors %}
+                                <div class="text-danger">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                        <div class="form-text text-muted">
+                            Please upload a CSV file with emptying log data.
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        {{ form.submit(class="btn btn-primary") }}
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4 shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>File Format Information</h5>
+            </div>
+            <div class="card-body">
+                <p>The CSV file should contain the following columns:</p>
+                <ol>
+                    <li><strong>Timestamp</strong>: Date and time of the emptying in various formats</li>
+                    <li><strong>Tag Code</strong>: Identifier code for the waste container</li>
+                    <li><strong>Waste Type</strong>: Type of waste (e.g., plastic, paper, glass)</li>
+                    <li><strong>Latitude</strong>: GPS latitude coordinate</li>
+                    <li><strong>Longitude</strong>: GPS longitude coordinate</li>
+                    <li><strong>Weight</strong>: Weight of the collected waste (optional)</li>
+                </ol>
+                <p class="mb-0"><strong>Example:</strong><br>
+                <code>2023-05-01-10:30:45,BIN12345,plastic,45.4654,9.1859,12.5</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
