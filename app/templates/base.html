@@ -19,8 +19,9 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="fas fa-recycle me-2"></i>Svuotamenti
+            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="ESA Logo" height="30" class="me-2">
+                Svuotamenti
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -33,8 +34,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'upload_file' %}active{% endif %}" href="{{ url_for('upload_file') }}">
-                            <i class="fas fa-upload me-1"></i>Upload File
+                        <a class="nav-link {% if request.endpoint == 'upload_file' or request.endpoint == 'select_files' %}active{% endif %}" href="{{ url_for('upload_file') }}">
+                            <i class="fas fa-upload me-1"></i>Upload
                         </a>
                     </li>
                     <li class="nav-item">
@@ -73,8 +74,15 @@
         </div>
     </div>
 
-    <footer class="py-4">
+    <footer class="py-4 mt-auto">
         <div class="container text-center">
+            <div class="d-flex justify-content-center align-items-center mb-2">
+                <span class="me-2">Toggle Theme:</span>
+                <div class="dark-mode-toggle" id="darkModeToggle" title="Toggle light/dark theme">
+                    <i class="fas fa-moon icon"></i>
+                    <i class="fas fa-sun icon"></i>
+                </div>
+            </div>
             <p class="mb-0">&copy; {{ now.year }} Svuotamenti - Emptying Log Interpreter</p>
             <small class="text-muted">A modern web application for waste collection data visualization</small>
         </div>
@@ -84,6 +92,58 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- JQuery (needed for some components) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        // Dark Mode Toggle Logic
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const currentTheme = localStorage.getItem('theme') ? localStorage.getItem('theme') : null;
+        const prefersDarkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+
+        // Apply initial theme
+        if (currentTheme === 'dark') {
+            setTheme('dark');
+        } else if (currentTheme === 'light') {
+            setTheme('light');
+        } else if (prefersDarkScheme.matches) { // If no preference saved, use system preference
+            setTheme('dark');
+        } else {
+            setTheme('light'); // Default to light
+        }
+
+        // Listener for toggle button
+        if (darkModeToggle) {
+            darkModeToggle.addEventListener('click', () => {
+                let currentTheme = document.documentElement.getAttribute('data-theme');
+                if (currentTheme === 'dark') {
+                    setTheme('light');
+                } else {
+                    setTheme('dark');
+                }
+            });
+        }
+
+        // Optional: Listen for changes in system preference 
+        // This part is commented out as it can be slightly jarring if the user explicitly selected a theme.
+        // Uncomment if you want the site to automatically switch if the OS theme changes.
+        /*
+        prefersDarkScheme.addEventListener('change', e => {
+            const savedTheme = localStorage.getItem('theme');
+            if (!savedTheme) { // Only switch if no theme was manually selected
+                if (e.matches) {
+                    setTheme('dark');
+                } else {
+                    setTheme('light');
+                }
+            }
+        });
+        */
+    </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html> 
