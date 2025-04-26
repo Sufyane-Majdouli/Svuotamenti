@@ -36,150 +36,197 @@ def index():
 def upload_file():
     form = UploadForm()
     if form.validate_on_submit():
+        uploaded_filepaths = []
+        uploaded_filenames = [] # Keep track of original filenames for display
         try:
-            f = form.file.data
-            filename = secure_filename(f.filename)
-            # Generate unique filename to prevent conflicts
-            unique_filename = f"{uuid.uuid4().hex}_{filename}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            for f in form.files.data:
+                if f:
+                    filename = secure_filename(f.filename)
+                    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                    
+                    app.logger.info(f"Attempting to save file: {filename} to: {filepath}")
+                    
+                    # Ensure directory exists (moved check here)
+                    upload_dir = app.config['UPLOAD_FOLDER']
+                    if not os.path.exists(upload_dir):
+                        os.makedirs(upload_dir, exist_ok=True)
+                        app.logger.info(f"Created upload directory: {upload_dir}")
+                    elif not os.access(upload_dir, os.W_OK):
+                         app.logger.error(f"Upload directory is not writable: {upload_dir}")
+                         flash(f'Error: Upload directory is not writable.', 'danger')
+                         return render_template('upload.html', title='Upload Files', form=form)
+
+                    f.save(filepath)
+                    app.logger.info(f"File saved successfully to {filepath}")
+                    
+                    if not os.path.exists(filepath):
+                        app.logger.error(f"File was not saved! Path does not exist: {filepath}")
+                        flash(f'Error: File upload failed for {filename}. The file could not be saved.', 'danger')
+                        continue 
+                        
+                    uploaded_filepaths.append(filepath)
+                    uploaded_filenames.append(filename) # Store original filename
             
-            # Log file path for debugging
-            app.logger.info(f"Attempting to save file to: {filepath}")
-            app.logger.info(f"Upload folder is: {app.config['UPLOAD_FOLDER']}")
-            app.logger.info(f"Is directory writable: {os.access(app.config['UPLOAD_FOLDER'], os.W_OK)}")
+            if not uploaded_filepaths:
+                flash('No valid files were uploaded.', 'warning')
+                return render_template('upload.html', title='Upload Files', form=form)
+
+            # Store the list of filepaths and filenames in session
+            session['uploaded_files_info'] = list(zip(uploaded_filenames, uploaded_filepaths))
+            app.logger.info(f"Setting session uploaded_files_info to {session['uploaded_files_info']}")
             
-            # Create the directory if it doesn't exist (again, for safety)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            # Save the file
-            f.save(filepath)
-            app.logger.info(f"File saved successfully to {filepath}")
-            
-            # Verify the file exists
-            if not os.path.exists(filepath):
-                app.logger.error(f"File was not saved! Path does not exist: {filepath}")
-                flash('Error: File upload failed. The file could not be saved.', 'danger')
-                return render_template('upload.html', title='Upload File', form=form)
-            
-            # Store the filepath in session for the map route
-            session['current_file'] = filepath
-            app.logger.info(f"Setting session current_file to {filepath}")
-            
-            # Redirect to the map view
-            return redirect(url_for('view_map'))
+            # Redirect to the file selection page instead of map view
+            return redirect(url_for('select_files')) 
             
         except Exception as e:
-            app.logger.error(f"Error during file upload: {str(e)}")
-            flash(f'Error uploading file: {str(e)}', 'danger')
-            return render_template('upload.html', title='Upload File', form=form)
+            app.logger.error(f"Error during file upload: {str(e)}", exc_info=True)
+            flash(f'An unexpected error occurred during upload: {str(e)}', 'danger')
+            return render_template('upload.html', title='Upload Files', form=form)
     
-    return render_template('upload.html', title='Upload File', form=form)
+    return render_template('upload.html', title='Upload Files', form=form)
 
-@app.route('/map')
+@app.route('/select_files', methods=['GET'])
+def select_files():
+    """Displays the list of uploaded files for selection."""
+    uploaded_files_info = session.get('uploaded_files_info', [])
+    if not uploaded_files_info:
+        flash('No files uploaded yet. Please upload files first.', 'warning')
+        return redirect(url_for('upload_file'))
+        
+    # Pass the list of (filename, filepath) tuples to the template
+    return render_template('select_files.html', title='Select Files', files_info=uploaded_files_info)
+
+@app.route('/map', methods=['GET', 'POST']) # Allow POST for file selection
 def view_map():
-    filepath = session.get('current_file')
-    app.logger.info(f"Attempting to read file from: {filepath}")
+    if request.method == 'POST':
+        # Files selected from the select_files page
+        selected_filepaths = request.form.getlist('selected_files')
+        app.logger.info(f"Received selected files via POST: {selected_filepaths}")
+        if not selected_filepaths:
+             flash('No files were selected to display on the map.', 'warning')
+             # Redirect back to selection or upload page
+             uploaded_files_info = session.get('uploaded_files_info', [])
+             if uploaded_files_info:
+                 return redirect(url_for('select_files'))
+             else:
+                 return redirect(url_for('upload_file'))
+        
+        # Store selected files in session *temporarily* for potential GET refresh? Or just process them.
+        # Let's just process them directly for now.
+        filepaths_to_process = selected_filepaths
+        source = "POST selection"
+        
+    else: # Handle GET request (e.g., direct navigation or refresh)
+        # Maybe try to get previously selected files from session? 
+        # For simplicity now, redirect if accessed via GET without prior POST.
+        flash('Please select files to view on the map first.', 'info')
+        return redirect(url_for('select_files')) # Or upload_file if session is empty
+
+    app.logger.info(f"Processing map using files ({source}): {filepaths_to_process}")
     
-    if not filepath:
-        app.logger.warning("No file path in session")
-        flash('No file selected. Please upload a file first.', 'warning')
-        return redirect(url_for('upload_file'))
+    all_emptyings = []
+    valid_files_processed = 0
+    total_files_attempted = len(filepaths_to_process)
     
-    if not os.path.exists(filepath):
-        app.logger.error(f"File does not exist at path: {filepath}")
-        flash('The uploaded file could not be found. Please upload a file again.', 'warning')
-        return redirect(url_for('upload_file'))
+    for filepath in filepaths_to_process:
+        # Security check: Ensure the filepath is within the allowed upload directory
+        # This prevents potential directory traversal if paths were manipulated
+        if not filepath.startswith(app.config['UPLOAD_FOLDER']):
+            app.logger.warning(f"Skipping potentially unsafe file path: {filepath}")
+            continue
+            
+        if not os.path.exists(filepath):
+            app.logger.error(f"Selected file does not exist: {filepath}")
+            # Extract original filename if possible for a better message
+            original_filename = os.path.basename(filepath).split('_', 1)[-1] if '_' in os.path.basename(filepath) else os.path.basename(filepath)
+            flash(f'Error: Selected file \'{original_filename}\' not found. It might have been removed.', 'warning')
+            continue
+        
+        try:
+            app.logger.info(f"Reading CSV data from {filepath}")
+            emptyings_from_file = read_emptyings_from_csv(filepath)
+            all_emptyings.extend(emptyings_from_file)
+            valid_files_processed += 1
+            app.logger.info(f"Successfully read {len(emptyings_from_file)} records from {os.path.basename(filepath)}")
+            
+        except Exception as e:
+            original_filename = os.path.basename(filepath).split('_', 1)[-1] if '_' in os.path.basename(filepath) else os.path.basename(filepath)
+            app.logger.error(f"Error processing file {filepath}: {str(e)}")
+            flash(f'Error reading or processing file \'{original_filename}\': {str(e)}', 'danger')
+
+    if valid_files_processed == 0 and total_files_attempted > 0:
+        flash('No valid data could be loaded from the selected files.', 'danger')
+        # Redirect back to selection page as no map can be shown
+        return redirect(url_for('select_files'))
+    elif valid_files_processed < total_files_attempted:
+        flash(f'Processed data from {valid_files_processed} out of {total_files_attempted} selected files. Some files may have had errors.', 'warning')
+    elif not all_emptyings and total_files_attempted == 0: # Should not happen due to checks above, but safeguard
+         flash('No files were selected or processed.', 'warning')
+         return redirect(url_for('select_files'))
+         
+    # --- Rest of the map data preparation and rendering logic (as before) ---
+    map_data = {
+        'points': [],
+        'center': [41.9028, 12.4964]  # Default center
+    }
+    total_records = len(all_emptyings)
+    valid_coords = 0
+    waste_types = {}
+
+    for emptying in all_emptyings:
+        if (emptying.latitude == 0.0 and emptying.longitude == 0.0) or \
+           not (-90 <= emptying.latitude <= 90) or not (-180 <= emptying.longitude <= 180):
+            continue
+        valid_coords += 1
+        waste_type = emptying.waste_type.lower()
+        waste_types[waste_type] = waste_types.get(waste_type, 0) + 1
+        marker_color = 'grey'
+        if 'organic' in waste_type or 'food' in waste_type or 'compost' in waste_type:
+            marker_color = 'brown'
+        elif 'plastic' in waste_type:
+            marker_color = 'yellow'
+        elif 'paper' in waste_type or 'cardboard' in waste_type:
+            marker_color = 'dodgerblue'
+        elif 'glass' in waste_type:
+            marker_color = 'green'
+        elif 'residual' in waste_type or 'non-recycl' in waste_type or 'general' in waste_type:
+            marker_color = 'grey'
+        elif 'metal' in waste_type or 'aluminum' in waste_type:
+            marker_color = 'cadetblue'
+        elif 'electronic' in waste_type or 'ewaste' in waste_type:
+            marker_color = 'darkred'
+        map_data['points'].append({
+            'lat': emptying.latitude,
+            'lng': emptying.longitude,
+            'tag_code': emptying.tag_code,
+            'waste_type': emptying.waste_type,
+            'weight': emptying.weight,
+            'timestamp': emptying.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            'color': marker_color
+        })
     
-    try:
-        # Read emptyings data
-        app.logger.info(f"Reading CSV data from {filepath}")
-        emptyings = read_emptyings_from_csv(filepath)
-        app.logger.info(f"Successfully read {len(emptyings)} records from CSV")
-        
-        # Prepare data for the map
-        map_data = {
-            'points': [],
-            'center': [41.9028, 12.4964]  # Default center: Rome, Italy
-        }
-        
-        # Statistics
-        total_records = len(emptyings)
-        valid_coords = 0
-        waste_types = {}
-        
-        # Process valid emptyings
-        for emptying in emptyings:
-            # Skip invalid coordinates
-            if (emptying.latitude == 0.0 and emptying.longitude == 0.0) or \
-               not (-90 <= emptying.latitude <= 90) or not (-180 <= emptying.longitude <= 180):
-                continue
-            
-            valid_coords += 1
-            
-            # Track waste types
-            waste_type = emptying.waste_type.lower()
-            waste_types[waste_type] = waste_types.get(waste_type, 0) + 1
-            
-            # Determine marker color based on waste type using standard waste sorting colors
-            marker_color = 'grey'  # Default color for residual/unknown waste
-            
-            # Standard waste type colors
-            if 'organic' in waste_type or 'food' in waste_type or 'compost' in waste_type:
-                marker_color = 'brown'
-            elif 'plastic' in waste_type:
-                marker_color = 'yellow'
-            elif 'paper' in waste_type or 'cardboard' in waste_type:
-                marker_color = 'dodgerblue'
-            elif 'glass' in waste_type:
-                marker_color = 'green'
-            elif 'residual' in waste_type or 'non-recycl' in waste_type or 'general' in waste_type:
-                marker_color = 'grey'
-            elif 'metal' in waste_type or 'aluminum' in waste_type:
-                marker_color = 'cadetblue'
-            elif 'electronic' in waste_type or 'ewaste' in waste_type:
-                marker_color = 'darkred'
-            
-            # Add point data
-            map_data['points'].append({
-                'lat': emptying.latitude,
-                'lng': emptying.longitude,
-                'tag_code': emptying.tag_code,
-                'waste_type': emptying.waste_type,
-                'weight': emptying.weight,
-                'timestamp': emptying.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                'color': marker_color
-            })
-        
-        # Calculate map center if there are valid points
-        if valid_coords > 0:
-            sum_lat = sum(point['lat'] for point in map_data['points'])
-            sum_lng = sum(point['lng'] for point in map_data['points'])
-            map_data['center'] = [sum_lat / valid_coords, sum_lng / valid_coords]
-        
-        # Prepare statistics for display
-        stats = {
-            'total_records': total_records,
-            'valid_coords': valid_coords,
-            'waste_types': waste_types
-        }
-        
-        # Prepare legend data with standard waste type colors
-        legend_items = [
-            {'name': 'Organic', 'color': 'brown'},
-            {'name': 'Residual', 'color': 'grey'},
-            {'name': 'Plastic', 'color': 'yellow'},
-            {'name': 'Paper', 'color': 'dodgerblue'},
-            {'name': 'Glass', 'color': 'green'},
-            {'name': 'Metal', 'color': 'cadetblue'},
-            {'name': 'Electronic', 'color': 'darkred'}
-        ]
-        
-        return render_template('map.html', title='Map View', map_data=map_data, stats=stats, legend_items=legend_items)
-        
-    except Exception as e:
-        app.logger.error(f"Error processing file: {str(e)}")
-        flash(f'Error reading or processing file: {str(e)}', 'danger')
-        return redirect(url_for('upload_file'))
+    if valid_coords > 0:
+        sum_lat = sum(point['lat'] for point in map_data['points'])
+        sum_lng = sum(point['lng'] for point in map_data['points'])
+        map_data['center'] = [sum_lat / valid_coords, sum_lng / valid_coords]
+    
+    stats = {
+        'total_records': total_records,
+        'valid_coords': valid_coords,
+        'waste_types': waste_types
+    }
+    legend_items = [
+        {'name': 'Organic', 'color': 'brown'},
+        {'name': 'Residual', 'color': 'grey'},
+        {'name': 'Plastic', 'color': 'yellow'},
+        {'name': 'Paper', 'color': 'dodgerblue'},
+        {'name': 'Glass', 'color': 'green'},
+        {'name': 'Metal', 'color': 'cadetblue'},
+        {'name': 'Electronic', 'color': 'darkred'}
+    ]
+    
+    return render_template('map.html', title='Map View', map_data=map_data, stats=stats, legend_items=legend_items)
 
 @app.route('/ftp_browser', methods=['GET', 'POST'])
 def ftp_browser():
