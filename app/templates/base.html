@@ -20,7 +20,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="ESA Waste Solutions Logo" height="40">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="ESA Waste Solutions Logo" height="55">
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -46,14 +46,6 @@
                         <a class="nav-link {% if request.endpoint == 'ftp_settings' %}active{% endif %}" href="{{ url_for('ftp_settings') }}">
                             <i class="fas fa-cog me-1"></i>FTP Settings
                         </a>
-                    </li>
-                    <li class="nav-item d-flex align-items-center ms-2">
-                        <label class="mode-switch mb-0">
-                            <input type="checkbox" id="darkModeToggle">
-                            <span class="mode-slider"></span>
-                            <i class="fas fa-sun"></i>
-                            <i class="fas fa-moon"></i>
-                        </label>
                     </li>
                 </ul>
             </div>
@@ -92,9 +84,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- JQuery (needed for some components) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- Dark Mode JavaScript -->
-    <script src="{{ url_for('static', filename='js/dark-mode.js') }}"></script>
-    
     {% block scripts %}{% endblock %}
 </body>
 </html> 
