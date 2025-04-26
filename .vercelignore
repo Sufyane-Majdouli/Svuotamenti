@@ -1,0 +1,42 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Desktop app-specific files
+main.py
+emptying_map.html
+
+# Environment and local development
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Specific to this project
+.DS_Store
+*.map
+*.log
+api/
+!index.py
+!wsgi.py
+!requirements.txt
+!vercel.json 
