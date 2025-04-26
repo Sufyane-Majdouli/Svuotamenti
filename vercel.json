@@ -8,11 +8,17 @@
   ],
   "routes": [
     {
+      "src": "/static/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/(.*)",
-      "dest": "api/index.py"
+      "dest": "/api/index.py"
     }
   ],
   "env": {
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "FLASK_ENV": "production",
+    "FLASK_DEBUG": "0"
   }
 } 

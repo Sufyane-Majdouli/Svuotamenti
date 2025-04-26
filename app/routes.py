@@ -5,14 +5,28 @@ import ftplib
 from datetime import datetime
 from pathlib import Path
 from werkzeug.utils import secure_filename
+import sys
 
 from flask import render_template, request, redirect, url_for, flash, jsonify, session
-from app import app
-from app.forms import FTPSettingsForm, UploadForm
-from app.models import read_emptyings_from_csv, Emptying
+# Fix imports to work with Vercel deployment
+try:
+    # Try relative import first (how it works locally)
+    from app import app
+    from app.forms import FTPSettingsForm, UploadForm
+    from app.models import read_emptyings_from_csv, Emptying
+except ImportError:
+    # For Vercel deployment
+    from Svuotamenti.app import app
+    from Svuotamenti.app.forms import FTPSettingsForm, UploadForm
+    from Svuotamenti.app.models import read_emptyings_from_csv, Emptying
 
 # Ensure upload folder exists
 os.makedirs(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), exist_ok=True)
+
+# Simple test route to check if the app is loading
+@app.route('/test')
+def test_route():
+    return "Flask app is running! Python path: " + str(sys.path)
 
 @app.route('/')
 def index():

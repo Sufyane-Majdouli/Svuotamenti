@@ -9,4 +9,7 @@ itsdangerous>=2.0.1
 click>=8.0.1
 python-dateutil>=2.8.1
 wtforms>=2.3.3
-PyQt5>=5.15.0
+email_validator>=1.1.3
+gunicorn>=20.1.0
+# PyQt5 is only for the desktop app, not needed for web deployment
+# PyQt5>=5.15.0
