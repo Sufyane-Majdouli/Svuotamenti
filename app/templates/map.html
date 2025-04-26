@@ -18,6 +18,7 @@
         width: 100%;
         border-radius: 12px;
         box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
     }
     .info-table {
         max-height: 250px;
@@ -35,17 +36,23 @@
         position: relative;
         border-radius: 12px;
         overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        transition: all 0.3s ease;
+    }
+    .map-container:hover {
+        box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+    }
+    .map-overlay, .map-legend {
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
     }
     .map-overlay {
         position: absolute;
         top: 15px;
         right: 15px;
         z-index: 1000;
-        background: rgba(255, 255, 255, 0.92);
         padding: 12px 16px;
         border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
         font-size: 14px;
         max-width: 220px;
         transition: all 0.3s ease;
@@ -93,7 +100,7 @@
         top: 15px;
         left: 15px;
         z-index: 1000;
-        background: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.95);
         padding: 12px 16px;
         border-radius: 10px;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
@@ -127,11 +134,17 @@
         border: 1px solid #dee2e6;
         color: #495057;
         margin-right: 5px;
+        font-weight: 500;
     }
     .toggle-btn.active {
         background: #2D6A4F;
         color: white;
         border-color: #2D6A4F;
+        box-shadow: 0 4px 8px rgba(45, 106, 79, 0.3);
+    }
+    .toggle-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     }
     .chart-container {
         width: 100%;
@@ -229,10 +242,8 @@
         bottom: 30px;
         right: 15px;
         z-index: 1000;
-        background: rgba(255, 255, 255, 0.92);
         padding: 12px 16px;
         border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
         font-size: 14px;
         max-width: 220px;
         transition: all 0.3s ease;
@@ -259,25 +270,48 @@
         border-bottom: 1px solid #dee2e6;
         padding-bottom: 5px;
     }
-    .custom-cluster-marker {
-        background-color: rgba(45, 106, 79, 0.8);
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+    /* File selector styles */
+    .file-selector-controls {
+        top: auto;
+        bottom: 15px;
+        left: 15px;
+        max-height: 40vh;
+        overflow-y: auto;
     }
-    .marker-popup {
-        max-width: 250px;
-        padding: 5px;
+    .file-checkbox, .file-checkbox-mobile {
+        cursor: pointer;
     }
-    .marker-popup h6 {
-        font-weight: bold;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 5px;
-        margin-bottom: 8px;
+    /* Custom map theme */
+    .custom-map-theme {
+        filter: saturate(1.2) contrast(1.1);
+    }
+    /* Improved marker styles */
+    .custom-marker {
+        border: 2px solid white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        transition: all 0.2s ease;
+    }
+    .custom-marker:hover {
+        transform: scale(1.2);
+        z-index: 1000 !important;
+    }
+    /* Animated pulsing effect for markers */
+    @keyframes pulse {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(45, 106, 79, 0.7);
+        }
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(45, 106, 79, 0);
+        }
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(45, 106, 79, 0);
+        }
+    }
+    .pulse-marker {
+        animation: pulse 2s infinite;
     }
 </style>
 {% endblock %}
@@ -335,21 +369,6 @@
                             </div>
                         </div>
                         
-                        <!-- Add file source filters (only shown when viewing combined data) -->
-                        {% if is_combined %}
-                        <div class="mb-3">
-                            <small class="d-block mb-2">Source Files:</small>
-                            <div id="fileSourceFilters">
-                                <span class="badge bg-secondary filter-badge file-filter active" data-filter="all">All Files</span>
-                                {% for filename in file_stats.keys() %}
-                                    <span class="badge bg-info filter-badge file-filter" data-filter="{{ filename }}">
-                                        {{ filename|truncate(20, True) }}
-                                    </span>
-                                {% endfor %}
-                            </div>
-                        </div>
-                        {% endif %}
-                        
                         <!-- Date range picker -->
                         <div class="mb-3">
                             <small class="d-block mb-2">Date Range:</small>
@@ -382,6 +401,80 @@
                         </div>
                     </div>
                     
+                    <!-- File selection component for combined view -->
+                    {% if is_combined %}
+                    <div class="map-controls file-selector-controls d-none d-md-block mt-3">
+                        <h6 class="mb-3"><i class="fas fa-file-csv me-2"></i>File Selection</h6>
+                        
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="select-all-files" checked>
+                            <label class="form-check-label" for="select-all-files">
+                                <strong>Select All Files</strong>
+                            </label>
+                        </div>
+                        
+                        <div id="file-selection-list" class="mt-2">
+                            {% for filename, data in file_stats.items() %}
+                            <div class="form-check mb-2 d-flex align-items-center">
+                                <input class="form-check-input file-checkbox" type="checkbox" data-filename="{{ filename }}" id="file-{{ loop.index }}" checked>
+                                <label class="form-check-label ms-2 d-flex align-items-center justify-content-between w-100" for="file-{{ loop.index }}">
+                                    <div class="text-truncate me-2" style="max-width: 150px;" title="{{ filename }}">
+                                        <i class="fas fa-file-csv me-1 text-success"></i> {{ filename }}
+                                    </div>
+                                    <span class="badge bg-primary rounded-pill">{{ data.count }}</span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="d-grid mt-3">
+                            <button class="btn btn-sm btn-success" id="apply-file-filter">
+                                <i class="fas fa-filter me-1"></i>Apply Filter
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mobile file selection (collapsible) -->
+                    <div class="card shadow mb-4 d-md-none">
+                        <div class="card-header bg-success text-white" data-bs-toggle="collapse" data-bs-target="#mobileFileSelection" aria-expanded="false">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="fas fa-file-csv me-2"></i>File Selection</h5>
+                                <i class="fas fa-chevron-down"></i>
+                            </div>
+                        </div>
+                        <div class="collapse" id="mobileFileSelection">
+                            <div class="card-body">
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="select-all-files-mobile" checked>
+                                    <label class="form-check-label" for="select-all-files-mobile">
+                                        <strong>Select All Files</strong>
+                                    </label>
+                                </div>
+                                
+                                <div id="file-selection-list-mobile">
+                                    {% for filename, data in file_stats.items() %}
+                                    <div class="form-check mb-2 d-flex align-items-center">
+                                        <input class="form-check-input file-checkbox-mobile" type="checkbox" data-filename="{{ filename }}" id="mobile-file-{{ loop.index }}" checked>
+                                        <label class="form-check-label ms-2 d-flex align-items-center justify-content-between w-100" for="mobile-file-{{ loop.index }}">
+                                            <div class="text-truncate me-2" style="max-width: 200px;" title="{{ filename }}">
+                                                <i class="fas fa-file-csv me-1 text-success"></i> {{ filename }}
+                                            </div>
+                                            <span class="badge bg-primary rounded-pill">{{ data.count }}</span>
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <div class="d-grid mt-3">
+                                    <button class="btn btn-success" id="apply-file-filter-mobile">
+                                        <i class="fas fa-filter me-1"></i>Apply Filter
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     <!-- The map -->
                     <div id="map"></div>
                     
@@ -395,7 +488,7 @@
                                 <div>{{ item.name }}</div>
                             </div>
                             {% endfor %}
-                        {% else %}
+                                    {% else %}
                             <!-- Fallback if legend_items not passed -->
                             <div class="legend-item">
                                 <div class="legend-color" style="background-color: brown;"></div>
@@ -424,8 +517,8 @@
                             <div class="legend-item">
                                 <div class="legend-color" style="background-color: darkred;"></div>
                                 <div>Electronic</div>
-                            </div>
-                        {% endif %}
+                                </div>
+                            {% endif %}
                     </div>
                 </div>
             </div>
@@ -747,17 +840,27 @@
         
         // Set initial variables
         let markersLayer = null;
+        let individualMarkers = [];
         let heatLayer = null;
         let routeLayer = null;
         let filteredPoints = [...mapData.points];
+        let selectedFiles = [];
         let activeFilters = {
             wasteType: 'all',
-            fileSource: 'all',
             dateRange: null,
             weightMin: 0,
             weightMax: 300,
-            searchText: ''
+            searchText: '',
+            files: []
         };
+        
+        // Initialize selected files (all by default)
+        {% if is_combined %}
+            {% for filename in file_stats.keys() %}
+                activeFilters.files.push("{{ filename }}");
+            {% endfor %}
+            selectedFiles = [...activeFilters.files];
+        {% endif %}
         
         // Create the map with center coordinates from server
         var map = L.map('map', {
@@ -765,17 +868,23 @@
             attributionControl: false
         }).setView(mapData.center, 10);
         
+        // Add the map container to custom theme class
+        document.querySelector('.map-container').classList.add('custom-map-theme');
+        
         // Add custom position for zoom control
         L.control.zoom({
             position: 'bottomright'
         }).addTo(map);
         
-        // Add the OpenStreetMap tiles with a more modern style
+        // Add enhanced map tiles (using a more modern style)
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
             subdomains: 'abcd',
             maxZoom: 20
         }).addTo(map);
+        
+        // Add map scale
+        L.control.scale({position: 'bottomright', imperial: false}).addTo(map);
         
         // Initialize the markers
         initializeMarkers();
@@ -788,6 +897,17 @@
         
         // === UTILITY FUNCTIONS ===
         
+        // Function to filter points by selected files
+        function filterPointsByFile() {
+            if (!activeFilters.files.length) {
+                return mapData.points;
+            }
+            
+            return mapData.points.filter(point => 
+                point.source_file && activeFilters.files.includes(point.source_file)
+            );
+        }
+        
         // Function to initialize markers on the map
         function initializeMarkers() {
             // Clear existing markers
@@ -795,51 +915,25 @@
                 map.removeLayer(markersLayer);
             }
             
+            // Remove any individual markers
+            individualMarkers.forEach(marker => {
+                if (map.hasLayer(marker)) {
+                    map.removeLayer(marker);
+                }
+            });
+            individualMarkers = [];
+            
             // Create new marker cluster group
             markersLayer = L.markerClusterGroup({
                 chunkedLoading: true,
                 maxClusterRadius: 50,
-                spiderfyOnMaxZoom: true,
-                showCoverageOnHover: true,
-                zoomToBoundsOnClick: true,
                 iconCreateFunction: function(cluster) {
                     const count = cluster.getChildCount();
                     const size = count < 10 ? 'small' : count < 100 ? 'medium' : 'large';
-                    
-                    // Determine color based on the dominant waste type in the cluster
-                    let plasticCount = 0, paperCount = 0, glassCount = 0, organicCount = 0, metalCount = 0, residualCount = 0;
-                    
-                    cluster.getAllChildMarkers().forEach(marker => {
-                        const point = marker.options.point;
-                        if (!point || !point.waste_type) return;
-                        
-                        const wasteType = point.waste_type.toLowerCase();
-                        if (wasteType.includes('plastic')) plasticCount++;
-                        else if (wasteType.includes('paper')) paperCount++;
-                        else if (wasteType.includes('glass')) glassCount++;
-                        else if (wasteType.includes('organic')) organicCount++;
-                        else if (wasteType.includes('metal')) metalCount++;
-                        else residualCount++;
-                    });
-                    
-                    // Determine dominant waste type
-                    const counts = [
-                        { type: 'plastic', count: plasticCount, color: '#FFD700' }, // Yellow
-                        { type: 'paper', count: paperCount, color: '#1E90FF' },     // Blue
-                        { type: 'glass', count: glassCount, color: '#2E8B57' },     // Green
-                        { type: 'organic', count: organicCount, color: '#8B4513' }, // Brown
-                        { type: 'metal', count: metalCount, color: '#5F9EA0' },     // Cadetblue
-                        { type: 'residual', count: residualCount, color: '#808080' } // Grey
-                    ];
-                    
-                    counts.sort((a, b) => b.count - a.count);
-                    const dominantColor = counts[0].count > 0 ? counts[0].color : '#808080';
-                    
-                    // Create a gradient background for better visual
                     return L.divIcon({
-                        html: `<div class="custom-cluster-marker" style="background: radial-gradient(circle, ${dominantColor} 0%, rgba(0,0,0,0.5) 100%); width:${size === 'small' ? 40 : size === 'medium' ? 50 : 60}px; height:${size === 'small' ? 40 : size === 'medium' ? 50 : 60}px;">${count}</div>`,
+                        html: `<div class="cluster-marker" style="width:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px; height:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px;">${count}</div>`,
                         className: `marker-cluster marker-cluster-${size}`,
-                        iconSize: L.point(size === 'small' ? 40 : size === 'medium' ? 50 : 60, size === 'small' ? 40 : size === 'medium' ? 50 : 60)
+                        iconSize: L.point(size === 'small' ? 30 : size === 'medium' ? 40 : 50, size === 'small' ? 30 : size === 'medium' ? 40 : 50)
                     });
                 }
             });
@@ -873,17 +967,17 @@
                     radius: 8,
                     fillColor: markerColor,
                     color: '#fff',
-                    weight: 1,
+                    weight: 2,
                     opacity: 1,
                     fillOpacity: 0.8,
-                    // Add tag code as a property for filtering
-                    alt: point.tag_code
+                    className: 'custom-marker',
+                    alt: point.tag_code // Store tag code for reference
                 });
                 
                 // Create popup content
                 const popupContent = `
                     <div class="marker-popup">
-                        <h6>${point.tag_code}</h6>
+                        <h6 class="fw-bold">${point.tag_code}</h6>
                         <p><strong>Waste Type:</strong> ${point.waste_type}</p>
                         <p><strong>Weight:</strong> ${point.weight || 'N/A'} kg</p>
                         <p><strong>Date:</strong> ${point.timestamp}</p>
@@ -900,9 +994,14 @@
                     className: 'custom-tooltip'
                 });
                 
-                // Store reference and add to map
-                point.individualMarker = marker;
-                marker.addTo(map);
+                // Store the marker in the array
+                individualMarkers.push(marker);
+                
+                // Add to markers layer
+                markersLayer.addLayer(marker);
+                
+                // Store reference to marker
+                point.marker = marker;
             });
             
             // Add markers layer to map
@@ -911,17 +1010,17 @@
         
         // Function to apply filters and update map
         function applyFilters() {
-            // Start with all points
-            filteredPoints = mapData.points.filter(point => {
+            // First filter by selected files if in combined view
+            let fileFilteredPoints = mapData.points;
+            if (activeFilters.files.length) {
+                fileFilteredPoints = filterPointsByFile();
+            }
+            
+            // Then apply other filters
+            filteredPoints = fileFilteredPoints.filter(point => {
                 // Filter by waste type
                 if (activeFilters.wasteType !== 'all' && 
                     point.waste_type.toLowerCase() !== activeFilters.wasteType.toLowerCase()) {
-                    return false;
-                }
-                
-                // Filter by file source (only for combined view)
-                if (activeFilters.fileSource !== 'all' && 
-                    point.source_file !== activeFilters.fileSource) {
                     return false;
                 }
                 
@@ -1136,7 +1235,8 @@
             heatLayer = L.heatLayer(heatData, {
                 radius: 25,
                 blur: 15,
-                maxZoom: 17
+                maxZoom: 17,
+                gradient: {0.4: 'blue', 0.6: 'lime', 0.8: 'yellow', 1: 'red'}
             });
             
             // Add to map
@@ -1304,6 +1404,135 @@
             document.body.removeChild(link);
         }
         
+        // Toggle clustering on/off
+        function toggleClustering(enableClustering) {
+            if (enableClustering) {
+                // Enable clustering - remove individual markers and add cluster
+                individualMarkers.forEach(marker => {
+                    if (map.hasLayer(marker)) {
+                        map.removeLayer(marker);
+                    }
+                });
+                
+                // Add marker cluster layer
+                if (!map.hasLayer(markersLayer)) {
+                    map.addLayer(markersLayer);
+                }
+            } else {
+                // Disable clustering - remove cluster layer first
+                if (map.hasLayer(markersLayer)) {
+                    map.removeLayer(markersLayer);
+                }
+                
+                // Add individual markers directly to the map one by one
+                individualMarkers.forEach(function(marker) {
+                    map.addLayer(marker);
+                });
+            }
+        }
+        
+        // === FILE SELECTION FUNCTIONS ===
+        {% if is_combined %}
+        // Function to handle file selection changes
+        function handleFileSelection() {
+            // Get all checked files
+            const fileCheckboxes = document.querySelectorAll('.file-checkbox:checked');
+            const selectedFilenames = Array.from(fileCheckboxes).map(cb => cb.dataset.filename);
+            
+            // Update the active filters
+            activeFilters.files = selectedFilenames;
+            
+            // Store for reference
+            selectedFiles = [...selectedFilenames];
+            
+            // Apply filters
+            applyFilters();
+        }
+        
+        // Select/deselect all files
+        document.getElementById('select-all-files').addEventListener('change', function() {
+            const isChecked = this.checked;
+            document.querySelectorAll('.file-checkbox').forEach(cb => {
+                cb.checked = isChecked;
+            });
+            
+            // Also update mobile checkboxes
+            document.getElementById('select-all-files-mobile').checked = isChecked;
+            document.querySelectorAll('.file-checkbox-mobile').forEach(cb => {
+                cb.checked = isChecked;
+            });
+        });
+        
+        // Mobile select/deselect all
+        document.getElementById('select-all-files-mobile').addEventListener('change', function() {
+            const isChecked = this.checked;
+            document.querySelectorAll('.file-checkbox-mobile').forEach(cb => {
+                cb.checked = isChecked;
+            });
+            
+            // Also update desktop checkboxes
+            document.getElementById('select-all-files').checked = isChecked;
+            document.querySelectorAll('.file-checkbox').forEach(cb => {
+                cb.checked = isChecked;
+            });
+        });
+        
+        // Apply file filter button
+        document.getElementById('apply-file-filter').addEventListener('click', handleFileSelection);
+        document.getElementById('apply-file-filter-mobile').addEventListener('click', handleFileSelection);
+        
+        // Sync desktop and mobile checkboxes
+        document.querySelectorAll('.file-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const filename = this.dataset.filename;
+                const mobileCheckbox = document.querySelector(`.file-checkbox-mobile[data-filename="${filename}"]`);
+                if (mobileCheckbox) {
+                    mobileCheckbox.checked = this.checked;
+                }
+                
+                // Update "select all" status
+                updateSelectAllStatus();
+            });
+        });
+        
+        document.querySelectorAll('.file-checkbox-mobile').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const filename = this.dataset.filename;
+                const desktopCheckbox = document.querySelector(`.file-checkbox[data-filename="${filename}"]`);
+                if (desktopCheckbox) {
+                    desktopCheckbox.checked = this.checked;
+                }
+                
+                // Update "select all" status
+                updateSelectAllStatus();
+            });
+        });
+        
+        // Update select all checkbox status
+        function updateSelectAllStatus() {
+            const totalCheckboxes = document.querySelectorAll('.file-checkbox').length;
+            const checkedCheckboxes = document.querySelectorAll('.file-checkbox:checked').length;
+            
+            const selectAllDesktop = document.getElementById('select-all-files');
+            const selectAllMobile = document.getElementById('select-all-files-mobile');
+            
+            if (checkedCheckboxes === 0) {
+                selectAllDesktop.checked = false;
+                selectAllDesktop.indeterminate = false;
+                selectAllMobile.checked = false;
+                selectAllMobile.indeterminate = false;
+            } else if (checkedCheckboxes === totalCheckboxes) {
+                selectAllDesktop.checked = true;
+                selectAllDesktop.indeterminate = false;
+                selectAllMobile.checked = true;
+                selectAllMobile.indeterminate = false;
+            } else {
+                selectAllDesktop.indeterminate = true;
+                selectAllMobile.indeterminate = true;
+            }
+        }
+        {% endif %}
+        
         // === EVENT LISTENERS ===
         
         // Waste type filter badges
@@ -1325,168 +1554,13 @@
             });
         });
         
-        // Search input
-        document.getElementById('searchTagCode').addEventListener('input', function() {
-            activeFilters.searchText = this.value.trim();
-            // Sync with mobile search
-            document.getElementById('searchTagCodeMobile').value = this.value;
-            applyFilters();
-        });
-        
-        // Mobile search input
-        document.getElementById('searchTagCodeMobile').addEventListener('input', function() {
-            activeFilters.searchText = this.value.trim();
-            // Sync with desktop search
-            document.getElementById('searchTagCode').value = this.value;
-            applyFilters();
-        });
-        
-        // Table search
-        document.getElementById('tableSearch').addEventListener('input', function() {
-            const searchText = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#dataTable tbody tr');
-            
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                let found = false;
-                
-                cells.forEach(cell => {
-                    if (cell.textContent.toLowerCase().includes(searchText)) {
-                        found = true;
-                    }
-                });
-                
-                row.style.display = found ? '' : 'none';
-            });
-        });
-        
-        // Initialize daterangepicker
-        $('#daterange, #daterangeMobile').daterangepicker({
-            opens: 'left',
-            autoUpdateInput: false,
-            locale: {
-                cancelLabel: 'Clear',
-                format: 'YYYY-MM-DD'
-            }
-        });
-        
-        // Handle date range selection
-        $('#daterange, #daterangeMobile').on('apply.daterangepicker', function(ev, picker) {
-            const startDate = picker.startDate;
-            const endDate = picker.endDate;
-            
-            // Update both inputs
-            $('#daterange, #daterangeMobile').val(startDate.format('YYYY-MM-DD') + ' - ' + endDate.format('YYYY-MM-DD'));
-            
-            // Update filter and apply
-            activeFilters.dateRange = [startDate, endDate];
-            applyFilters();
-        });
-        
-        // Handle date range clear
-        $('#daterange, #daterangeMobile').on('cancel.daterangepicker', function() {
-            // Clear both inputs
-            $('#daterange, #daterangeMobile').val('');
-            
-            // Reset filter and apply
-            activeFilters.dateRange = null;
-            applyFilters();
-        });
-        
-        // Weight range slider
-        document.getElementById('weightRangeSlider').addEventListener('input', function() {
-            const value = parseInt(this.value);
-            activeFilters.weightMin = value;
-            document.getElementById('minWeight').textContent = value;
-            document.getElementById('weightRangeSliderMobile').value = value;
-            document.getElementById('minWeightMobile').textContent = value;
-            applyFilters();
-        });
-        
-        // Mobile weight range slider
-        document.getElementById('weightRangeSliderMobile').addEventListener('input', function() {
-            const value = parseInt(this.value);
-            activeFilters.weightMin = value;
-            document.getElementById('minWeightMobile').textContent = value;
-            document.getElementById('weightRangeSlider').value = value;
-            document.getElementById('minWeight').textContent = value;
-            applyFilters();
-        });
-        
         // Toggle clustering
         document.getElementById('clusterToggle').addEventListener('click', function() {
             this.classList.toggle('active');
             document.getElementById('clusterToggleMobile').classList.toggle('active');
             
-            if (this.classList.contains('active')) {
-                // Enable clustering
-                if (!map.hasLayer(markersLayer)) {
-                    map.addLayer(markersLayer);
-                }
-            } else {
-                // Disable clustering
-                if (map.hasLayer(markersLayer)) {
-                    map.removeLayer(markersLayer);
-                    
-                    // Add individual markers directly to the map
-                    filteredPoints.forEach(point => {
-                        const wasteType = point.waste_type.toLowerCase();
-                        
-                        // Use standard waste type colors
-                        let markerColor = 'grey';  // Default color for unknown/residual waste
-                        
-                        if (wasteType.includes('organic') || wasteType.includes('food') || wasteType.includes('compost')) {
-                            markerColor = 'brown';
-                        } else if (wasteType.includes('plastic')) {
-                            markerColor = 'yellow';
-                        } else if (wasteType.includes('paper') || wasteType.includes('cardboard')) {
-                            markerColor = 'dodgerblue';
-                        } else if (wasteType.includes('glass')) {
-                            markerColor = 'green';
-                        } else if (wasteType.includes('residual') || wasteType.includes('non-recycl') || wasteType.includes('general')) {
-                            markerColor = 'grey';
-                        } else if (wasteType.includes('metal') || wasteType.includes('aluminum')) {
-                            markerColor = 'cadetblue';
-                        } else if (wasteType.includes('electronic') || wasteType.includes('ewaste')) {
-                            markerColor = 'darkred';
-                        }
-                        
-                        // Create marker with appropriate color
-                        const marker = L.circleMarker([point.lat, point.lng], {
-                            radius: 8,
-                            fillColor: markerColor,
-                            color: '#fff',
-                            weight: 1,
-                            opacity: 1,
-                            fillOpacity: 0.8,
-                            // Add tag code as a property for filtering
-                            alt: point.tag_code
-                        });
-                        
-                        // Same popup and tooltip from clustered markers
-                        marker.bindPopup(`
-                            <div class="marker-popup">
-                                <h6>${point.tag_code}</h6>
-                                <p><strong>Waste Type:</strong> ${point.waste_type}</p>
-                                <p><strong>Weight:</strong> ${point.weight || 'N/A'} kg</p>
-                                <p><strong>Date:</strong> ${point.timestamp}</p>
-                                ${point.source_file ? `<p><strong>Source:</strong> ${point.source_file}</p>` : ''}
-                            </div>
-                        `);
-                        
-                        marker.bindTooltip(point.tag_code, {
-                            direction: 'top',
-                            permanent: false,
-                            opacity: 0.8,
-                            className: 'custom-tooltip'
-                        });
-                        
-                        // Store reference and add to map
-                        point.individualMarker = marker;
-                        marker.addTo(map);
-                    });
-                }
-            }
+            const enableClustering = this.classList.contains('active');
+            toggleClustering(enableClustering);
         });
         
         // Mobile clustering toggle
@@ -1541,11 +1615,11 @@
             // Reset filter values
             activeFilters = {
                 wasteType: 'all',
-                fileSource: 'all',
                 dateRange: null,
                 weightMin: 0,
                 weightMax: 300,
-                searchText: ''
+                searchText: '',
+                files: []
             };
             
             // Reset UI elements
@@ -1615,25 +1689,6 @@
         L.control.attribution({
             position: 'bottomleft'
         }).addTo(map);
-
-        // Add file source filtering
-        document.querySelectorAll('#fileSourceFilters .file-filter').forEach(badge => {
-            badge.addEventListener('click', function() {
-                const fileSource = this.getAttribute('data-filter');
-                
-                // Update active state in UI
-                document.querySelectorAll('#fileSourceFilters .file-filter').forEach(b => {
-                    b.classList.remove('active');
-                    if (b.getAttribute('data-filter') === fileSource) {
-                        b.classList.add('active');
-                    }
-                });
-                
-                // Update filter and apply
-                activeFilters.fileSource = fileSource;
-                applyFilters();
-            });
-        });
     });
 </script>
 {% endblock %} 

@@ -1,0 +1,617 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<!-- Leaflet CSS for maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<!-- MarkerCluster CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+<!-- Leaflet Time Dimension CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.control.min.css" />
+<!-- Daterangepicker CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" />
+<!-- Chart.js CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.css">
+<style>
+    #map {
+        height: 70vh;
+        width: 100%;
+        border-radius: 12px;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    .info-table {
+        max-height: 250px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    .stats-badge {
+        font-size: 14px;
+        transition: all 0.2s ease;
+    }
+    .waste-type-label {
+        text-transform: capitalize;
+    }
+    .map-container {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        transition: all 0.3s ease;
+    }
+    .map-container:hover {
+        box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+    }
+    .map-overlay, .map-legend {
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    }
+    .map-overlay {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        z-index: 1000;
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-size: 14px;
+        max-width: 220px;
+        transition: all 0.3s ease;
+    }
+    .map-overlay:hover {
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        background: rgba(255, 255, 255, 0.97);
+    }
+    .card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: none;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    }
+    .card-header {
+        border-bottom: none;
+        padding: 15px 20px;
+    }
+    .list-group-item {
+        padding: 12px 16px;
+        border-left: none;
+        border-right: none;
+    }
+    .list-group-item:first-child {
+        border-top: none;
+    }
+    .btn {
+        border-radius: 8px;
+        padding: 8px 16px;
+        transition: all 0.2s ease;
+        font-weight: 500;
+    }
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    /* New styles for enhanced map page */
+    .map-controls {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        z-index: 1000;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 12px 16px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        max-width: 320px;
+        transition: all 0.3s ease;
+    }
+    .map-controls:hover {
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        background: rgba(255, 255, 255, 0.97);
+    }
+    .filter-badge {
+        font-size: 12px;
+        padding: 6px 12px;
+        margin-right: 5px;
+        margin-bottom: 5px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .filter-badge:hover {
+        transform: translateY(-2px);
+    }
+    .filter-badge.active {
+        box-shadow: 0 0 0 2px #fff, 0 0 0 4px #007bff;
+    }
+    .toggle-btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        color: #495057;
+        margin-right: 5px;
+        font-weight: 500;
+    }
+    .toggle-btn.active {
+        background: #2D6A4F;
+        color: white;
+        border-color: #2D6A4F;
+        box-shadow: 0 4px 8px rgba(45, 106, 79, 0.3);
+    }
+    .toggle-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .chart-container {
+        width: 100%;
+        height: 250px;
+        margin-bottom: 20px;
+    }
+    .nav-tabs .nav-link.active {
+        border-color: transparent;
+        border-bottom: 3px solid #2D6A4F;
+        font-weight: 600;
+    }
+    .nav-tabs .nav-link {
+        color: #495057;
+        border: none;
+        padding: 12px 15px;
+        transition: all 0.3s ease;
+    }
+    .nav-tabs .nav-link:hover {
+        border-color: transparent;
+        border-bottom: 3px solid rgba(45, 106, 79, 0.3);
+    }
+    .nav-tabs {
+        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 15px;
+    }
+    .cluster-marker {
+        background-color: rgba(45, 106, 79, 0.8);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+    }
+    .timeline-slider {
+        width: 100%;
+        margin: 10px 0;
+    }
+    .weight-range {
+        margin-top: 10px;
+    }
+    .search-bar {
+        margin-bottom: 15px;
+    }
+    .daterangepicker td.active {
+        background-color: #2D6A4F !important;
+    }
+    .route-line {
+        stroke: #2D6A4F;
+        stroke-width: 3;
+        stroke-opacity: 0.7;
+        stroke-dasharray: 5, 8;
+        animation: dash 30s linear infinite;
+    }
+    @keyframes dash {
+        to {
+            stroke-dashoffset: -1000;
+        }
+    }
+    .leaflet-popup-content-wrapper {
+        border-radius: 8px;
+    }
+    .custom-tooltip {
+        background-color: rgba(45, 106, 79, 0.9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+    .heatmap-toggle.active {
+        background-color: #FF7F50;
+        border-color: #FF7F50;
+    }
+    /* Mobile optimizations */
+    @media (max-width: 767px) {
+        .map-controls, .map-overlay {
+            position: relative;
+            top: auto;
+            left: auto;
+            right: auto;
+            max-width: 100%;
+            margin-bottom: 15px;
+        }
+        #map {
+            height: 50vh;
+        }
+        .card {
+            margin-bottom: 15px;
+        }
+    }
+    /* Map legend style */
+    .map-legend {
+        position: absolute;
+        bottom: 30px;
+        right: 15px;
+        z-index: 1000;
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-size: 14px;
+        max-width: 220px;
+        transition: all 0.3s ease;
+    }
+    .map-legend:hover {
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        background: rgba(255, 255, 255, 0.97);
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 10px;
+        border: 1px solid rgba(0,0,0,0.2);
+    }
+    .legend-title {
+        font-weight: bold;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 5px;
+    }
+    /* File selector styles */
+    .file-selector-controls {
+        top: auto;
+        bottom: 15px;
+        left: 15px;
+        max-height: 40vh;
+        overflow-y: auto;
+    }
+    .file-checkbox, .file-checkbox-mobile {
+        cursor: pointer;
+    }
+    /* Custom map theme */
+    .custom-map-theme {
+        filter: saturate(1.2) contrast(1.1);
+    }
+    /* Improved marker styles */
+    .custom-marker {
+        border: 2px solid white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        transition: all 0.2s ease;
+    }
+    .custom-marker:hover {
+        transform: scale(1.2);
+        z-index: 1000 !important;
+    }
+    /* Animated pulsing effect for markers */
+    @keyframes pulse {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(45, 106, 79, 0.7);
+        }
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(45, 106, 79, 0);
+        }
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(45, 106, 79, 0);
+        }
+    }
+    .pulse-marker {
+        animation: pulse 2s infinite;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Your existing content here - I've omitted it for brevity -->
+{% endblock %}
+
+{% block scripts %}
+<!-- Leaflet JS for maps -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- MarkerCluster JS -->
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+<!-- Heatmap plugin -->
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<!-- TimeDimension plugin -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.min.js"></script>
+<!-- Moment.js for date handling -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+<!-- DateRangePicker JS -->
+<script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get data from server-side
+        var mapData = {{ map_data|tojson }};
+        
+        // Set initial variables
+        let markersLayer = null;
+        let individualMarkers = [];
+        let heatLayer = null;
+        let routeLayer = null;
+        let filteredPoints = [...mapData.points];
+        let selectedFiles = [];
+        let activeFilters = {
+            wasteType: 'all',
+            dateRange: null,
+            weightMin: 0,
+            weightMax: 300,
+            searchText: '',
+            files: []
+        };
+        
+        // Initialize selected files (all by default)
+        {% if is_combined %}
+            {% for filename in file_stats.keys() %}
+                activeFilters.files.push("{{ filename }}");
+            {% endfor %}
+            selectedFiles = [...activeFilters.files];
+        {% endif %}
+        
+        // Create the map with center coordinates from server
+        var map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView(mapData.center, 10);
+        
+        // Add the map container to custom theme class
+        document.querySelector('.map-container').classList.add('custom-map-theme');
+        
+        // Add custom position for zoom control
+        L.control.zoom({
+            position: 'bottomright'
+        }).addTo(map);
+        
+        // Add enhanced map tiles (using a more modern style)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+        
+        // Add map scale
+        L.control.scale({position: 'bottomright', imperial: false}).addTo(map);
+        
+        // Initialize the markers
+        initializeMarkers();
+        
+        // Calculate and display total weight
+        calculateTotalWeight();
+        
+        // Initialize charts
+        initializeCharts();
+        
+        // === UTILITY FUNCTIONS ===
+        
+        // Function to filter points by selected files
+        function filterPointsByFile() {
+            if (!activeFilters.files.length) {
+                return mapData.points;
+            }
+            
+            return mapData.points.filter(point => 
+                point.source_file && activeFilters.files.includes(point.source_file)
+            );
+        }
+        
+        // Function to initialize markers on the map
+        function initializeMarkers() {
+            // Clear existing markers
+            if (markersLayer) {
+                map.removeLayer(markersLayer);
+            }
+            
+            // Remove any individual markers
+            individualMarkers.forEach(marker => {
+                if (map.hasLayer(marker)) {
+                    map.removeLayer(marker);
+                }
+            });
+            individualMarkers = [];
+            
+            // Create new marker cluster group
+            markersLayer = L.markerClusterGroup({
+                chunkedLoading: true,
+                maxClusterRadius: 50,
+                iconCreateFunction: function(cluster) {
+                    const count = cluster.getChildCount();
+                    const size = count < 10 ? 'small' : count < 100 ? 'medium' : 'large';
+                    return L.divIcon({
+                        html: `<div class="cluster-marker" style="width:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px; height:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px;">${count}</div>`,
+                        className: `marker-cluster marker-cluster-${size}`,
+                        iconSize: L.point(size === 'small' ? 30 : size === 'medium' ? 40 : 50, size === 'small' ? 30 : size === 'medium' ? 40 : 50)
+                    });
+                }
+            });
+            
+            // Add markers for each filtered point
+            filteredPoints.forEach(point => {
+                // Get waste type and corresponding color
+                const wasteType = point.waste_type.toLowerCase();
+                
+                // Use standard waste type colors
+                let markerColor = 'grey';  // Default color for unknown/residual waste
+                
+                if (wasteType.includes('organic') || wasteType.includes('food') || wasteType.includes('compost')) {
+                    markerColor = 'brown';
+                } else if (wasteType.includes('plastic')) {
+                    markerColor = 'yellow';
+                } else if (wasteType.includes('paper') || wasteType.includes('cardboard')) {
+                    markerColor = 'dodgerblue';
+                } else if (wasteType.includes('glass')) {
+                    markerColor = 'green';
+                } else if (wasteType.includes('residual') || wasteType.includes('non-recycl') || wasteType.includes('general')) {
+                    markerColor = 'grey';
+                } else if (wasteType.includes('metal') || wasteType.includes('aluminum')) {
+                    markerColor = 'cadetblue';
+                } else if (wasteType.includes('electronic') || wasteType.includes('ewaste')) {
+                    markerColor = 'darkred';
+                }
+                
+                // Create marker with appropriate color
+                const marker = L.circleMarker([point.lat, point.lng], {
+                    radius: 8,
+                    fillColor: markerColor,
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8,
+                    className: 'custom-marker',
+                    alt: point.tag_code // Store tag code for reference
+                });
+                
+                // Create popup content
+                const popupContent = `
+                    <div class="marker-popup">
+                        <h6 class="fw-bold">${point.tag_code}</h6>
+                        <p><strong>Waste Type:</strong> ${point.waste_type}</p>
+                        <p><strong>Weight:</strong> ${point.weight || 'N/A'} kg</p>
+                        <p><strong>Date:</strong> ${point.timestamp}</p>
+                        ${point.source_file ? `<p><strong>Source:</strong> ${point.source_file}</p>` : ''}
+                    </div>
+                `;
+                
+                // Set popup and tooltip
+                marker.bindPopup(popupContent);
+                marker.bindTooltip(point.tag_code, {
+                    direction: 'top',
+                    permanent: false,
+                    opacity: 0.8,
+                    className: 'custom-tooltip'
+                });
+                
+                // Store the marker in the array
+                individualMarkers.push(marker);
+                
+                // Add to markers layer
+                markersLayer.addLayer(marker);
+                
+                // Store reference to marker
+                point.marker = marker;
+            });
+            
+            // Add markers layer to map
+            map.addLayer(markersLayer);
+        }
+        
+        // Function to apply filters and update map
+        function applyFilters() {
+            // First filter by selected files if in combined view
+            let fileFilteredPoints = mapData.points;
+            if (activeFilters.files.length) {
+                fileFilteredPoints = filterPointsByFile();
+            }
+            
+            // Then apply other filters
+            filteredPoints = fileFilteredPoints.filter(point => {
+                // Filter by waste type
+                if (activeFilters.wasteType !== 'all' && 
+                    point.waste_type.toLowerCase() !== activeFilters.wasteType.toLowerCase()) {
+                    return false;
+                }
+                
+                // Filter by weight range
+                if (point.weight < activeFilters.weightMin || 
+                    point.weight > activeFilters.weightMax) {
+                    return false;
+                }
+                
+                // Filter by date range
+                if (activeFilters.dateRange) {
+                    const pointDate = moment(point.timestamp, "YYYY-MM-DD HH:mm:ss");
+                    if (!pointDate.isBetween(
+                        activeFilters.dateRange[0], 
+                        activeFilters.dateRange[1], null, '[]')) {
+                        return false;
+                    }
+                }
+                
+                // Filter by search text
+                if (activeFilters.searchText) {
+                    const searchLower = activeFilters.searchText.toLowerCase();
+                    if (!point.tag_code.toLowerCase().includes(searchLower)) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            
+            // Update markers
+            initializeMarkers();
+            
+            // Update heatmap if active
+            if (heatLayer && map.hasLayer(heatLayer)) {
+                updateHeatmap();
+            }
+            
+            // Update route if active
+            if (routeLayer && map.hasLayer(routeLayer)) {
+                updateRoute();
+            }
+            
+            // Update table rows visibility
+            updateDataTable();
+            
+            // Recalculate total weight
+            calculateTotalWeight();
+            
+            // Update charts
+            updateCharts();
+        }
+        
+        // Function to calculate and display total weight
+        function calculateTotalWeight() {
+            const totalWeight = filteredPoints.reduce((sum, point) => sum + parseFloat(point.weight || 0), 0);
+            document.getElementById('totalWeight').textContent = totalWeight.toFixed(2) + ' kg';
+        }
+        
+        // Toggle clustering on/off
+        function toggleClustering(enableClustering) {
+            if (enableClustering) {
+                // Enable clustering - remove individual markers and add cluster
+                individualMarkers.forEach(marker => {
+                    if (map.hasLayer(marker)) {
+                        map.removeLayer(marker);
+                    }
+                });
+                
+                // Add marker cluster layer
+                if (!map.hasLayer(markersLayer)) {
+                    map.addLayer(markersLayer);
+                }
+            } else {
+                // Disable clustering - remove cluster layer first
+                if (map.hasLayer(markersLayer)) {
+                    map.removeLayer(markersLayer);
+                }
+                
+                // Add individual markers directly to the map
+                // Use a simple loop to avoid any linter issues
+                for (let i = 0; i < individualMarkers.length; i++) {
+                    map.addLayer(individualMarkers[i]);
+                }
+            }
+        }
+        
+        // Other functions and code
+    });
+</script>
+{% endblock %} 
