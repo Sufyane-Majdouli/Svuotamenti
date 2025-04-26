@@ -2,39 +2,30 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-md-6">
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
-                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload CSV Files</h4>
+                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload CSV File</h4>
             </div>
             <div class="card-body">
                 <form method="POST" enctype="multipart/form-data">
                     {{ form.hidden_tag() }}
                     
-                    <div class="mb-4">
-                        {{ form.files.label(class="form-label") }}
-                        <div class="input-group">
-                            {{ form.files(class="form-control", multiple=True) }}
-                        </div>
-                        
-                        {% if form.files.errors %}
-                            {% for error in form.files.errors %}
+                    <div class="mb-3">
+                        {{ form.file.label(class="form-label") }}
+                        {{ form.file(class="form-control") }}
+                        {% if form.file.errors %}
+                            {% for error in form.file.errors %}
                                 <div class="text-danger">{{ error }}</div>
                             {% endfor %}
                         {% endif %}
-                        
-                        <div class="form-text text-muted mb-2">
-                            Select multiple CSV files by holding Ctrl (or Cmd on Mac) while selecting files.
-                        </div>
-                        
-                        <div id="selected-files" class="mt-3 d-none">
-                            <h6><i class="fas fa-check-circle text-success me-2"></i>Selected Files:</h6>
-                            <ul id="file-list" class="list-group list-group-flush"></ul>
+                        <div class="form-text text-muted">
+                            Please upload a CSV file with emptying log data.
                         </div>
                     </div>
                     
                     <div class="text-center">
-                        {{ form.submit(class="btn btn-primary", id="upload-btn") }}
+                        {{ form.submit(class="btn btn-primary") }}
                         <a href="{{ url_for('index') }}" class="btn btn-secondary ms-2">Cancel</a>
                     </div>
                 </form>
@@ -46,7 +37,7 @@
                 <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>File Format Information</h5>
             </div>
             <div class="card-body">
-                <p>Each CSV file should contain the following columns:</p>
+                <p>The CSV file should contain the following columns:</p>
                 <ol>
                     <li><strong>Timestamp</strong>: Date and time of the emptying in various formats</li>
                     <li><strong>Tag Code</strong>: Identifier code for the waste container</li>
@@ -61,61 +52,4 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const fileInput = document.querySelector('input[type="file"]');
-        const fileList = document.getElementById('file-list');
-        const selectedFiles = document.getElementById('selected-files');
-        const uploadBtn = document.getElementById('upload-btn');
-        
-        fileInput.addEventListener('change', function(e) {
-            // Clear previous list
-            fileList.innerHTML = '';
-            
-            if (this.files.length > 0) {
-                selectedFiles.classList.remove('d-none');
-                
-                // Update upload button text
-                uploadBtn.textContent = `Upload ${this.files.length} File${this.files.length > 1 ? 's' : ''}`;
-                
-                // Display selected files
-                Array.from(this.files).forEach(file => {
-                    const li = document.createElement('li');
-                    li.className = 'list-group-item';
-                    
-                    // Add file icon based on extension
-                    const fileIcon = document.createElement('i');
-                    fileIcon.className = 'fas fa-file-csv me-2 text-success';
-                    li.appendChild(fileIcon);
-                    
-                    // Add file name
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = file.name;
-                    li.appendChild(nameSpan);
-                    
-                    // Add file size
-                    const sizeSpan = document.createElement('span');
-                    sizeSpan.className = 'badge bg-secondary float-end';
-                    sizeSpan.textContent = formatFileSize(file.size);
-                    li.appendChild(sizeSpan);
-                    
-                    fileList.appendChild(li);
-                });
-            } else {
-                selectedFiles.classList.add('d-none');
-                uploadBtn.textContent = 'Upload';
-            }
-        });
-        
-        // Helper function to format file size
-        function formatFileSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-            else return (bytes / 1048576).toFixed(1) + ' MB';
-        }
-    });
-</script>
 {% endblock %} 
