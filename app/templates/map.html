@@ -259,6 +259,26 @@
         border-bottom: 1px solid #dee2e6;
         padding-bottom: 5px;
     }
+    .custom-cluster-marker {
+        background-color: rgba(45, 106, 79, 0.8);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+    }
+    .marker-popup {
+        max-width: 250px;
+        padding: 5px;
+    }
+    .marker-popup h6 {
+        font-weight: bold;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+        margin-bottom: 8px;
+    }
 </style>
 {% endblock %}
 
@@ -314,6 +334,21 @@
                                 {% endfor %}
                             </div>
                         </div>
+                        
+                        <!-- Add file source filters (only shown when viewing combined data) -->
+                        {% if is_combined %}
+                        <div class="mb-3">
+                            <small class="d-block mb-2">Source Files:</small>
+                            <div id="fileSourceFilters">
+                                <span class="badge bg-secondary filter-badge file-filter active" data-filter="all">All Files</span>
+                                {% for filename in file_stats.keys() %}
+                                    <span class="badge bg-info filter-badge file-filter" data-filter="{{ filename }}">
+                                        {{ filename|truncate(20, True) }}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
                         
                         <!-- Date range picker -->
                         <div class="mb-3">
@@ -717,6 +752,7 @@
         let filteredPoints = [...mapData.points];
         let activeFilters = {
             wasteType: 'all',
+            fileSource: 'all',
             dateRange: null,
             weightMin: 0,
             weightMax: 300,
@@ -735,8 +771,8 @@
         }).addTo(map);
         
         // Add the OpenStreetMap tiles with a more modern style
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
             subdomains: 'abcd',
             maxZoom: 20
         }).addTo(map);
@@ -763,13 +799,47 @@
             markersLayer = L.markerClusterGroup({
                 chunkedLoading: true,
                 maxClusterRadius: 50,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: true,
+                zoomToBoundsOnClick: true,
                 iconCreateFunction: function(cluster) {
                     const count = cluster.getChildCount();
                     const size = count < 10 ? 'small' : count < 100 ? 'medium' : 'large';
+                    
+                    // Determine color based on the dominant waste type in the cluster
+                    let plasticCount = 0, paperCount = 0, glassCount = 0, organicCount = 0, metalCount = 0, residualCount = 0;
+                    
+                    cluster.getAllChildMarkers().forEach(marker => {
+                        const point = marker.options.point;
+                        if (!point || !point.waste_type) return;
+                        
+                        const wasteType = point.waste_type.toLowerCase();
+                        if (wasteType.includes('plastic')) plasticCount++;
+                        else if (wasteType.includes('paper')) paperCount++;
+                        else if (wasteType.includes('glass')) glassCount++;
+                        else if (wasteType.includes('organic')) organicCount++;
+                        else if (wasteType.includes('metal')) metalCount++;
+                        else residualCount++;
+                    });
+                    
+                    // Determine dominant waste type
+                    const counts = [
+                        { type: 'plastic', count: plasticCount, color: '#FFD700' }, // Yellow
+                        { type: 'paper', count: paperCount, color: '#1E90FF' },     // Blue
+                        { type: 'glass', count: glassCount, color: '#2E8B57' },     // Green
+                        { type: 'organic', count: organicCount, color: '#8B4513' }, // Brown
+                        { type: 'metal', count: metalCount, color: '#5F9EA0' },     // Cadetblue
+                        { type: 'residual', count: residualCount, color: '#808080' } // Grey
+                    ];
+                    
+                    counts.sort((a, b) => b.count - a.count);
+                    const dominantColor = counts[0].count > 0 ? counts[0].color : '#808080';
+                    
+                    // Create a gradient background for better visual
                     return L.divIcon({
-                        html: `<div class="cluster-marker" style="width:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px; height:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px;">${count}</div>`,
+                        html: `<div class="custom-cluster-marker" style="background: radial-gradient(circle, ${dominantColor} 0%, rgba(0,0,0,0.5) 100%); width:${size === 'small' ? 40 : size === 'medium' ? 50 : 60}px; height:${size === 'small' ? 40 : size === 'medium' ? 50 : 60}px;">${count}</div>`,
                         className: `marker-cluster marker-cluster-${size}`,
-                        iconSize: L.point(size === 'small' ? 30 : size === 'medium' ? 40 : 50, size === 'small' ? 30 : size === 'medium' ? 40 : 50)
+                        iconSize: L.point(size === 'small' ? 40 : size === 'medium' ? 50 : 60, size === 'small' ? 40 : size === 'medium' ? 50 : 60)
                     });
                 }
             });
@@ -805,7 +875,9 @@
                     color: '#fff',
                     weight: 1,
                     opacity: 1,
-                    fillOpacity: 0.8
+                    fillOpacity: 0.8,
+                    // Add tag code as a property for filtering
+                    alt: point.tag_code
                 });
                 
                 // Create popup content
@@ -828,11 +900,9 @@
                     className: 'custom-tooltip'
                 });
                 
-                // Add to markers layer
-                markersLayer.addLayer(marker);
-                
-                // Store reference to marker
-                point.marker = marker;
+                // Store reference and add to map
+                point.individualMarker = marker;
+                marker.addTo(map);
             });
             
             // Add markers layer to map
@@ -846,6 +916,12 @@
                 // Filter by waste type
                 if (activeFilters.wasteType !== 'all' && 
                     point.waste_type.toLowerCase() !== activeFilters.wasteType.toLowerCase()) {
+                    return false;
+                }
+                
+                // Filter by file source (only for combined view)
+                if (activeFilters.fileSource !== 'all' && 
+                    point.source_file !== activeFilters.fileSource) {
                     return false;
                 }
                 
@@ -1352,12 +1428,62 @@
                 if (map.hasLayer(markersLayer)) {
                     map.removeLayer(markersLayer);
                     
-                    // Add individual markers
+                    // Add individual markers directly to the map
                     filteredPoints.forEach(point => {
-                        const marker = point.marker;
-                        if (marker) {
-                            map.removeLayer(marker);
+                        const wasteType = point.waste_type.toLowerCase();
+                        
+                        // Use standard waste type colors
+                        let markerColor = 'grey';  // Default color for unknown/residual waste
+                        
+                        if (wasteType.includes('organic') || wasteType.includes('food') || wasteType.includes('compost')) {
+                            markerColor = 'brown';
+                        } else if (wasteType.includes('plastic')) {
+                            markerColor = 'yellow';
+                        } else if (wasteType.includes('paper') || wasteType.includes('cardboard')) {
+                            markerColor = 'dodgerblue';
+                        } else if (wasteType.includes('glass')) {
+                            markerColor = 'green';
+                        } else if (wasteType.includes('residual') || wasteType.includes('non-recycl') || wasteType.includes('general')) {
+                            markerColor = 'grey';
+                        } else if (wasteType.includes('metal') || wasteType.includes('aluminum')) {
+                            markerColor = 'cadetblue';
+                        } else if (wasteType.includes('electronic') || wasteType.includes('ewaste')) {
+                            markerColor = 'darkred';
                         }
+                        
+                        // Create marker with appropriate color
+                        const marker = L.circleMarker([point.lat, point.lng], {
+                            radius: 8,
+                            fillColor: markerColor,
+                            color: '#fff',
+                            weight: 1,
+                            opacity: 1,
+                            fillOpacity: 0.8,
+                            // Add tag code as a property for filtering
+                            alt: point.tag_code
+                        });
+                        
+                        // Same popup and tooltip from clustered markers
+                        marker.bindPopup(`
+                            <div class="marker-popup">
+                                <h6>${point.tag_code}</h6>
+                                <p><strong>Waste Type:</strong> ${point.waste_type}</p>
+                                <p><strong>Weight:</strong> ${point.weight || 'N/A'} kg</p>
+                                <p><strong>Date:</strong> ${point.timestamp}</p>
+                                ${point.source_file ? `<p><strong>Source:</strong> ${point.source_file}</p>` : ''}
+                            </div>
+                        `);
+                        
+                        marker.bindTooltip(point.tag_code, {
+                            direction: 'top',
+                            permanent: false,
+                            opacity: 0.8,
+                            className: 'custom-tooltip'
+                        });
+                        
+                        // Store reference and add to map
+                        point.individualMarker = marker;
+                        marker.addTo(map);
                     });
                 }
             }
@@ -1415,6 +1541,7 @@
             // Reset filter values
             activeFilters = {
                 wasteType: 'all',
+                fileSource: 'all',
                 dateRange: null,
                 weightMin: 0,
                 weightMax: 300,
@@ -1488,6 +1615,25 @@
         L.control.attribution({
             position: 'bottomleft'
         }).addTo(map);
+
+        // Add file source filtering
+        document.querySelectorAll('#fileSourceFilters .file-filter').forEach(badge => {
+            badge.addEventListener('click', function() {
+                const fileSource = this.getAttribute('data-filter');
+                
+                // Update active state in UI
+                document.querySelectorAll('#fileSourceFilters .file-filter').forEach(b => {
+                    b.classList.remove('active');
+                    if (b.getAttribute('data-filter') === fileSource) {
+                        b.classList.add('active');
+                    }
+                });
+                
+                // Update filter and apply
+                activeFilters.fileSource = fileSource;
+                applyFilters();
+            });
+        });
     });
 </script>
 {% endblock %} 
