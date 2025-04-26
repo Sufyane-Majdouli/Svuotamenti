@@ -11,7 +11,17 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
+
+# Check if we're running on Vercel
+if os.environ.get('VERCEL', False):
+    # Use the /tmp directory for Vercel's serverless environment
+    app.config['UPLOAD_FOLDER'] = '/tmp'
+    logger.info("Running on Vercel, using /tmp directory for uploads")
+else:
+    # Use the static/uploads folder for local development
+    app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/uploads')
+    logger.info(f"Running locally, using {app.config['UPLOAD_FOLDER']} for uploads")
+
 bootstrap = Bootstrap(app)
 
 try:
