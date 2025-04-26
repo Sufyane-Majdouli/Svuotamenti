@@ -8,6 +8,13 @@
                 <h4 class="mb-0"><i class="fas fa-server me-2"></i>FTP Connection</h4>
             </div>
             <div class="card-body">
+                {% if vercel_warning %}
+                <div class="alert alert-warning mb-3">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    {{ vercel_warning }}
+                </div>
+                {% endif %}
+                
                 <form method="POST">
                     {{ form.hidden_tag() }}
                     
@@ -49,6 +56,7 @@
                                 <div class="text-danger">{{ error }}</div>
                             {% endfor %}
                         {% endif %}
+                        <small class="form-text text-muted">For better security, use a dedicated FTP account with limited permissions.</small>
                     </div>
                     
                     <div class="d-grid">
@@ -79,7 +87,14 @@
             </div>
             <div class="card-body">
                 {% if error %}
-                    <div class="alert alert-danger">{{ error }}</div>
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        <strong>Connection Error:</strong> {{ error }}
+                        {% if 'timed out' in error %}
+                        <hr>
+                        <p class="mb-0"><small>Tip: Try using a local FTP server or one with faster response times. Vercel has a 10-second function execution limit.</small></p>
+                        {% endif %}
+                    </div>
                 {% endif %}
                 
                 {% if connected %}

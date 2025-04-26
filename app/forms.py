@@ -7,8 +7,8 @@ class FTPSettingsForm(FlaskForm):
     """Form for FTP connection settings"""
     host = StringField('FTP Host', validators=[DataRequired()])
     port = IntegerField('FTP Port', validators=[DataRequired(), NumberRange(min=1, max=65535)], default=21)
-    username = StringField('Username', validators=[DataRequired()])
-    password = PasswordField('Password', validators=[Optional()])
+    username = StringField('Username', validators=[DataRequired()], render_kw={"autocomplete": "username"})
+    password = PasswordField('Password', validators=[Optional()], render_kw={"autocomplete": "current-password"})
     submit = SubmitField('Connect')
 
 class UploadForm(FlaskForm):

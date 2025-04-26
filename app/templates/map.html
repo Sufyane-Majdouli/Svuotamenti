@@ -223,6 +223,42 @@
             margin-bottom: 15px;
         }
     }
+    /* Map legend style */
+    .map-legend {
+        position: absolute;
+        bottom: 30px;
+        right: 15px;
+        z-index: 1000;
+        background: rgba(255, 255, 255, 0.92);
+        padding: 12px 16px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        font-size: 14px;
+        max-width: 220px;
+        transition: all 0.3s ease;
+    }
+    .map-legend:hover {
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        background: rgba(255, 255, 255, 0.97);
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 10px;
+        border: 1px solid rgba(0,0,0,0.2);
+    }
+    .legend-title {
+        font-weight: bold;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 5px;
+    }
 </style>
 {% endblock %}
 
@@ -315,28 +351,46 @@
                     <div id="map"></div>
                     
                     <!-- Map legend -->
-                    <div class="map-overlay d-none d-md-block">
-                        <div class="mb-2"><strong>Map Legend:</strong></div>
-                        {% for waste_type, count in stats.waste_types.items() %}
-                            {% if waste_type and count > 0 %}
-                                <div class="mb-1">
-                                    {% if 'plastic' in waste_type %}
-                                        <i class="fas fa-circle text-warning me-2"></i>
-                                    {% elif 'paper' in waste_type %}
-                                        <i class="fas fa-circle text-primary me-2"></i>
-                                    {% elif 'glass' in waste_type %}
-                                        <i class="fas fa-circle text-success me-2"></i>
-                                    {% elif 'organic' in waste_type %}
-                                        <i class="fas fa-circle text-success me-2" style="color: darkgreen !important;"></i>
-                                    {% elif 'metal' in waste_type %}
-                                        <i class="fas fa-circle me-2" style="color: cadetblue;"></i>
-                                    {% else %}
-                                        <i class="fas fa-circle text-danger me-2"></i>
-                                    {% endif %}
-                                    <span class="waste-type-label">{{ waste_type }}</span>
-                                </div>
-                            {% endif %}
-                        {% endfor %}
+                    <div class="map-legend d-none d-md-block">
+                        <div class="legend-title">Waste Types</div>
+                        {% if legend_items %}
+                            {% for item in legend_items %}
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: {{ item.color }};"></div>
+                                <div>{{ item.name }}</div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <!-- Fallback if legend_items not passed -->
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: brown;"></div>
+                                <div>Organic</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: grey;"></div>
+                                <div>Residual</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: yellow;"></div>
+                                <div>Plastic</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: dodgerblue;"></div>
+                                <div>Paper</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: green;"></div>
+                                <div>Glass</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: cadetblue;"></div>
+                                <div>Metal</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: darkred;"></div>
+                                <div>Electronic</div>
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -608,20 +662,7 @@
         var mapData = {{ map_data|tojson }};
         
         // Set initial variables
-        let markers = L.markerClusterGroup({
-            iconCreateFunction: function(cluster) {
-                const count = cluster.getChildCount();
-                let size = 'small';
-                if (count > 50) size = 'large';
-                else if (count > 10) size = 'medium';
-                
-                return L.divIcon({
-                    html: `<div class="cluster-marker" style="width: ${30 + count/2}px; height: ${30 + count/2}px;">${count}</div>`,
-                    className: `marker-cluster marker-cluster-${size}`,
-                    iconSize: L.point(40, 40)
-                });
-            }
-        });
+        let markersLayer = null;
         let heatLayer = null;
         let routeLayer = null;
         let filteredPoints = [...mapData.points];
@@ -665,62 +706,87 @@
         // Function to initialize markers on the map
         function initializeMarkers() {
             // Clear existing markers
-            markers.clearLayers();
+            if (markersLayer) {
+                map.removeLayer(markersLayer);
+            }
             
-            // Loop through all filtered points
-            filteredPoints.forEach(function(point) {
-                // Create custom icon based on waste type
-                const iconHtml = `<div style="background-color: ${point.color}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`;
-                const icon = L.divIcon({
-                    className: 'custom-div-icon',
-                    html: iconHtml,
-                    iconSize: [15, 15],
-                    iconAnchor: [7, 7]
+            // Create new marker cluster group
+            markersLayer = L.markerClusterGroup({
+                chunkedLoading: true,
+                maxClusterRadius: 50,
+                iconCreateFunction: function(cluster) {
+                    const count = cluster.getChildCount();
+                    const size = count < 10 ? 'small' : count < 100 ? 'medium' : 'large';
+                    return L.divIcon({
+                        html: `<div class="cluster-marker" style="width:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px; height:${size === 'small' ? 30 : size === 'medium' ? 40 : 50}px;">${count}</div>`,
+                        className: `marker-cluster marker-cluster-${size}`,
+                        iconSize: L.point(size === 'small' ? 30 : size === 'medium' ? 40 : 50, size === 'small' ? 30 : size === 'medium' ? 40 : 50)
+                    });
+                }
+            });
+            
+            // Add markers for each filtered point
+            filteredPoints.forEach(point => {
+                // Get waste type and corresponding color
+                const wasteType = point.waste_type.toLowerCase();
+                
+                // Use standard waste type colors
+                let markerColor = 'grey';  // Default color for unknown/residual waste
+                
+                if (wasteType.includes('organic') || wasteType.includes('food') || wasteType.includes('compost')) {
+                    markerColor = 'brown';
+                } else if (wasteType.includes('plastic')) {
+                    markerColor = 'yellow';
+                } else if (wasteType.includes('paper') || wasteType.includes('cardboard')) {
+                    markerColor = 'dodgerblue';
+                } else if (wasteType.includes('glass')) {
+                    markerColor = 'green';
+                } else if (wasteType.includes('residual') || wasteType.includes('non-recycl') || wasteType.includes('general')) {
+                    markerColor = 'grey';
+                } else if (wasteType.includes('metal') || wasteType.includes('aluminum')) {
+                    markerColor = 'cadetblue';
+                } else if (wasteType.includes('electronic') || wasteType.includes('ewaste')) {
+                    markerColor = 'darkred';
+                }
+                
+                // Create marker with appropriate color
+                const marker = L.circleMarker([point.lat, point.lng], {
+                    radius: 8,
+                    fillColor: markerColor,
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
                 });
                 
                 // Create popup content
-                const popupContent = 
-                    '<div class="p-2">' +
-                    '<h6 class="mb-2">' + point.tag_code + '</h6>' +
-                    '<p class="mb-1"><strong>Waste Type:</strong> ' + point.waste_type + '</p>' +
-                    '<p class="mb-1"><strong>Weight:</strong> ' + point.weight + ' kg</p>' +
-                    '<p class="mb-1"><strong>Time:</strong> ' + point.timestamp + '</p>' +
-                    '<p class="mb-0"><strong>Location:</strong> ' + point.lat.toFixed(5) + ', ' + point.lng.toFixed(5) + '</p>' +
-                    '</div>';
+                const popupContent = `
+                    <div class="marker-popup">
+                        <h6>${point.tag_code}</h6>
+                        <p><strong>Waste Type:</strong> ${point.waste_type}</p>
+                        <p><strong>Weight:</strong> ${point.weight || 'N/A'} kg</p>
+                        <p><strong>Date:</strong> ${point.timestamp}</p>
+                    </div>
+                `;
                 
-                // Add marker to map
-                const tooltipContent = point.tag_code + ' - ' + point.waste_type;
-                const marker = L.marker([point.lat, point.lng], {
-                    icon: icon,
-                    alt: point.tag_code,
-                    timestamp: moment(point.timestamp, "YYYY-MM-DD HH:mm:ss").valueOf(),
-                    waste_type: point.waste_type.toLowerCase(),
-                    weight: point.weight
-                })
-                .bindPopup(popupContent, {
-                    className: 'custom-popup',
-                    closeButton: true,
-                    closeOnClick: false,
-                    maxWidth: 300
-                })
-                .bindTooltip(tooltipContent, {
-                    className: 'custom-tooltip',
+                // Set popup and tooltip
+                marker.bindPopup(popupContent);
+                marker.bindTooltip(point.tag_code, {
                     direction: 'top',
-                    offset: [0, -10]
+                    permanent: false,
+                    opacity: 0.8,
+                    className: 'custom-tooltip'
                 });
                 
-                markers.addLayer(marker);
+                // Add to markers layer
+                markersLayer.addLayer(marker);
+                
+                // Store reference to marker
+                point.marker = marker;
             });
             
-            // Add marker cluster group to map
-            map.addLayer(markers);
-            
-            // Fit map to marker bounds if we have markers
-            if (filteredPoints.length > 0) {
-                map.fitBounds(markers.getBounds(), {
-                    padding: [30, 30]
-                });
-            }
+            // Add markers layer to map
+            map.addLayer(markersLayer);
         }
         
         // Function to apply filters and update map
@@ -1074,27 +1140,7 @@
         // Highlight points on timeline
         function highlightTimelinePoints(visiblePoints) {
             // Reset all markers
-            markers.eachLayer(marker => {
-                // Reset the marker icon
-                const wasteType = marker.options.waste_type;
-                let color = 'red';
-                
-                if (wasteType.includes('plastic')) color = 'orange';
-                else if (wasteType.includes('paper')) color = 'blue';
-                else if (wasteType.includes('glass')) color = 'green';
-                else if (wasteType.includes('organic')) color = 'darkgreen';
-                else if (wasteType.includes('metal')) color = 'cadetblue';
-                
-                const iconHtml = `<div style="background-color: ${color}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`;
-                
-                const icon = L.divIcon({
-                    className: 'custom-div-icon',
-                    html: iconHtml,
-                    iconSize: [15, 15],
-                    iconAnchor: [7, 7]
-                });
-                
-                marker.setIcon(icon);
+            markersLayer.eachLayer(marker => {
                 marker.setOpacity(0.5);
             });
             
@@ -1102,29 +1148,9 @@
             const visibleTagCodes = visiblePoints.map(p => p.tag_code);
             
             // Highlight visible markers
-            markers.eachLayer(marker => {
+            markersLayer.eachLayer(marker => {
                 if (visibleTagCodes.includes(marker.options.alt)) {
                     // Highlight this marker
-                    const wasteType = marker.options.waste_type;
-                    let color = 'red';
-                    
-                    if (wasteType.includes('plastic')) color = 'orange';
-                    else if (wasteType.includes('paper')) color = 'blue';
-                    else if (wasteType.includes('glass')) color = 'green';
-                    else if (wasteType.includes('organic')) color = 'darkgreen';
-                    else if (wasteType.includes('metal')) color = 'cadetblue';
-                    
-                    // Make icon larger and brighter for highlighted markers
-                    const iconHtml = `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`;
-                    
-                    const icon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: iconHtml,
-                        iconSize: [20, 20],
-                        iconAnchor: [10, 10]
-                    });
-                    
-                    marker.setIcon(icon);
                     marker.setOpacity(1);
                 }
             });
@@ -1268,28 +1294,20 @@
             
             if (this.classList.contains('active')) {
                 // Enable clustering
-                if (!map.hasLayer(markers)) {
-                    map.addLayer(markers);
+                if (!map.hasLayer(markersLayer)) {
+                    map.addLayer(markersLayer);
                 }
             } else {
                 // Disable clustering
-                if (map.hasLayer(markers)) {
-                    map.removeLayer(markers);
+                if (map.hasLayer(markersLayer)) {
+                    map.removeLayer(markersLayer);
                     
                     // Add individual markers
                     filteredPoints.forEach(point => {
-                        const iconHtml = `<div style="background-color: ${point.color}; width: 15px; height: 15px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>`;
-                        const icon = L.divIcon({
-                            className: 'custom-div-icon',
-                            html: iconHtml,
-                            iconSize: [15, 15],
-                            iconAnchor: [7, 7]
-                        });
-                        
-                        L.marker([point.lat, point.lng], {
-                            icon: icon,
-                            alt: point.tag_code
-                        }).addTo(map);
+                        const marker = point.marker;
+                        if (marker) {
+                            map.removeLayer(marker);
+                        }
                     });
                 }
             }

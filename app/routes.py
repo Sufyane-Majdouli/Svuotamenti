@@ -120,18 +120,24 @@ def view_map():
             waste_type = emptying.waste_type.lower()
             waste_types[waste_type] = waste_types.get(waste_type, 0) + 1
             
-            # Determine marker color based on waste type
-            marker_color = 'red'  # Default color
-            if 'plastic' in waste_type:
-                marker_color = 'orange'
-            elif 'paper' in waste_type:
-                marker_color = 'blue'
+            # Determine marker color based on waste type using standard waste sorting colors
+            marker_color = 'grey'  # Default color for residual/unknown waste
+            
+            # Standard waste type colors
+            if 'organic' in waste_type or 'food' in waste_type or 'compost' in waste_type:
+                marker_color = 'brown'
+            elif 'plastic' in waste_type:
+                marker_color = 'yellow'
+            elif 'paper' in waste_type or 'cardboard' in waste_type:
+                marker_color = 'dodgerblue'
             elif 'glass' in waste_type:
                 marker_color = 'green'
-            elif 'organic' in waste_type:
-                marker_color = 'darkgreen'
-            elif 'metal' in waste_type:
+            elif 'residual' in waste_type or 'non-recycl' in waste_type or 'general' in waste_type:
+                marker_color = 'grey'
+            elif 'metal' in waste_type or 'aluminum' in waste_type:
                 marker_color = 'cadetblue'
+            elif 'electronic' in waste_type or 'ewaste' in waste_type:
+                marker_color = 'darkred'
             
             # Add point data
             map_data['points'].append({
@@ -157,7 +163,18 @@ def view_map():
             'waste_types': waste_types
         }
         
-        return render_template('map.html', title='Map View', map_data=map_data, stats=stats)
+        # Prepare legend data with standard waste type colors
+        legend_items = [
+            {'name': 'Organic', 'color': 'brown'},
+            {'name': 'Residual', 'color': 'grey'},
+            {'name': 'Plastic', 'color': 'yellow'},
+            {'name': 'Paper', 'color': 'dodgerblue'},
+            {'name': 'Glass', 'color': 'green'},
+            {'name': 'Metal', 'color': 'cadetblue'},
+            {'name': 'Electronic', 'color': 'darkred'}
+        ]
+        
+        return render_template('map.html', title='Map View', map_data=map_data, stats=stats, legend_items=legend_items)
         
     except Exception as e:
         app.logger.error(f"Error processing file: {str(e)}")
@@ -202,10 +219,14 @@ def ftp_browser():
     error_message = None
     
     if session.get('connected'):
+        app.logger.info(f"Attempting FTP connection to {session.get('ftp_host')}:{session.get('ftp_port')}")
         try:
             with ftplib.FTP() as ftp:
+                # Set a shorter timeout for Vercel's serverless environment
+                timeout = 5  # reduced from 10 seconds to 5 seconds
                 # Connect to server
-                ftp.connect(session['ftp_host'], session['ftp_port'], timeout=10)
+                app.logger.info(f"Connecting to FTP with timeout {timeout}s")
+                ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
                 ftp.login(session['ftp_user'], session['ftp_password'])
                 ftp.set_pasv(True)
                 
@@ -216,6 +237,7 @@ def ftp_browser():
                 # Get directory listing
                 files = []
                 ftp.dir(files.append)
+                app.logger.info(f"Successfully retrieved directory listing with {len(files)} items")
                 
                 # Parse listing
                 for item in files:
@@ -240,15 +262,34 @@ def ftp_browser():
                             'size': size,
                             'date': date
                         })
+        except ftplib.error_timeout as e:
+            app.logger.error(f"FTP connection timed out: {str(e)}")
+            error_message = "FTP connection timed out. This may happen on serverless platforms like Vercel. Try again with a different server or reduce the port number."
+            session['connected'] = False
+        except ConnectionRefusedError as e:
+            app.logger.error(f"FTP connection refused: {str(e)}")
+            error_message = "FTP connection refused. Please verify the server is running and accessible."
+            session['connected'] = False
+        except ftplib.error_perm as e:
+            app.logger.error(f"FTP permission error: {str(e)}")
+            error_message = f"FTP permission error: {str(e)}"
+            session['connected'] = False
         except Exception as e:
+            app.logger.error(f"FTP Error: {str(e)}")
             error_message = f"FTP Error: {str(e)}"
             session['connected'] = False
+    
+    # Provide a Vercel-specific warning if running on Vercel
+    vercel_warning = None
+    if os.environ.get('VERCEL'):
+        vercel_warning = "Note: FTP functionality may be limited on Vercel's serverless platform due to network restrictions."
     
     return render_template('ftp_browser.html', title='FTP Browser', 
                           form=form, files=file_list, 
                           connected=session.get('connected', False),
                           current_dir=session.get('current_dir', '/'),
-                          error=error_message)
+                          error=error_message,
+                          vercel_warning=vercel_warning)
 
 @app.route('/ftp_navigate', methods=['POST'])
 def ftp_navigate():
@@ -260,8 +301,10 @@ def ftp_navigate():
     
     try:
         with ftplib.FTP() as ftp:
-            # Connect to server
-            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=10)
+            # Connect to server with shorter timeout
+            timeout = 5  # reduced timeout for Vercel's serverless environment
+            app.logger.info(f"FTP navigate: Connecting with timeout {timeout}s")
+            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
             ftp.login(session['ftp_user'], session['ftp_password'])
             ftp.set_pasv(True)
             
@@ -282,7 +325,11 @@ def ftp_navigate():
             session['current_dir'] = new_dir
             
             return jsonify({'success': True, 'new_dir': new_dir})
+    except ftplib.error_timeout as e:
+        app.logger.error(f"FTP navigate: Connection timed out: {str(e)}")
+        return jsonify({'success': False, 'error': 'FTP connection timed out. This may happen on serverless platforms.'})
     except Exception as e:
+        app.logger.error(f"FTP navigate error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/ftp_download', methods=['POST'])
@@ -299,8 +346,10 @@ def ftp_download():
         local_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         
         with ftplib.FTP() as ftp:
-            # Connect to server
-            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=10)
+            # Connect to server with shorter timeout
+            timeout = 5  # reduced timeout for Vercel's serverless environment
+            app.logger.info(f"FTP download: Connecting with timeout {timeout}s")
+            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
             ftp.login(session['ftp_user'], session['ftp_password'])
             ftp.set_pasv(True)
             
@@ -309,8 +358,11 @@ def ftp_download():
                 ftp.cwd(current_dir)
             
             # Download the file
+            app.logger.info(f"Downloading file {filename} to {local_path}")
             with open(local_path, 'wb') as local_file:
                 ftp.retrbinary(f'RETR {filename}', local_file.write)
+            
+            app.logger.info(f"File download complete")
         
         # Store the filepath in session for the map route
         session['current_file'] = local_path
@@ -320,7 +372,11 @@ def ftp_download():
             'message': f'File {filename} downloaded successfully',
             'redirect': url_for('view_map')
         })
+    except ftplib.error_timeout as e:
+        app.logger.error(f"FTP download: Connection timed out: {str(e)}")
+        return jsonify({'success': False, 'error': 'FTP connection timed out. This may happen on serverless platforms.'})
     except Exception as e:
+        app.logger.error(f"FTP download error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/disconnect', methods=['POST'])
