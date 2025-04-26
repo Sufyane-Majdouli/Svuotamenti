@@ -7,7 +7,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
 # Import the Flask app
-from Svuotamenti.app import app
+from app import app
 
 # Add a specific Vercel health check route
 @app.route('/api/healthcheck')
@@ -22,7 +22,7 @@ def healthcheck():
     }
 
 # Ensure upload folder exists
-uploads_dir = Path(PROJECT_ROOT) / 'Svuotamenti' / 'app' / 'static' / 'uploads'
+uploads_dir = Path(PROJECT_ROOT) / 'app' / 'static' / 'uploads'
 os.makedirs(uploads_dir, exist_ok=True)
 
 # Vercel will use this as the main entrypoint
