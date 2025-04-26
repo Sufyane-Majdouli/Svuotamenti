@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from flask_wtf.file import FileField, FileRequired, FileAllowed
+from flask_wtf.file import FileField, FileRequired, FileAllowed, MultipleFileField
 from wtforms import StringField, PasswordField, SubmitField, IntegerField
 from wtforms.validators import DataRequired, NumberRange, Optional
 
@@ -13,7 +13,7 @@ class FTPSettingsForm(FlaskForm):
 
 class UploadForm(FlaskForm):
     """Form for uploading CSV files"""
-    file = FileField('CSV File', validators=[
+    files = MultipleFileField('CSV Files', validators=[
         FileRequired(),
         FileAllowed(['csv'], 'CSV files only!')
     ])

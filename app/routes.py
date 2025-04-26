@@ -37,43 +37,55 @@ def upload_file():
     form = UploadForm()
     if form.validate_on_submit():
         try:
-            f = form.file.data
-            filename = secure_filename(f.filename)
-            # Generate unique filename to prevent conflicts
-            unique_filename = f"{uuid.uuid4().hex}_{filename}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            uploaded_files = form.files.data
+            file_paths = []
             
-            # Log file path for debugging
-            app.logger.info(f"Attempting to save file to: {filepath}")
-            app.logger.info(f"Upload folder is: {app.config['UPLOAD_FOLDER']}")
-            app.logger.info(f"Is directory writable: {os.access(app.config['UPLOAD_FOLDER'], os.W_OK)}")
+            for f in uploaded_files:
+                filename = secure_filename(f.filename)
+                # Generate unique filename to prevent conflicts
+                unique_filename = f"{uuid.uuid4().hex}_{filename}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                
+                # Log file path for debugging
+                app.logger.info(f"Attempting to save file to: {filepath}")
+                
+                # Create the directory if it doesn't exist (again, for safety)
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                
+                # Save the file
+                f.save(filepath)
+                app.logger.info(f"File saved successfully to {filepath}")
+                
+                # Verify the file exists
+                if not os.path.exists(filepath):
+                    app.logger.error(f"File was not saved! Path does not exist: {filepath}")
+                    continue
+                
+                # Add to list of file paths
+                file_paths.append(filepath)
             
-            # Create the directory if it doesn't exist (again, for safety)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            if not file_paths:
+                flash('Error: No files were successfully uploaded.', 'danger')
+                return render_template('upload.html', title='Upload Files', form=form)
             
-            # Save the file
-            f.save(filepath)
-            app.logger.info(f"File saved successfully to {filepath}")
+            # Store the file paths in session for the map route
+            session['current_files'] = file_paths
+            app.logger.info(f"Setting session current_files to {file_paths}")
             
-            # Verify the file exists
-            if not os.path.exists(filepath):
-                app.logger.error(f"File was not saved! Path does not exist: {filepath}")
-                flash('Error: File upload failed. The file could not be saved.', 'danger')
-                return render_template('upload.html', title='Upload File', form=form)
+            # If only one file, use the existing flow
+            if len(file_paths) == 1:
+                session['current_file'] = file_paths[0]
+                return redirect(url_for('view_map'))
             
-            # Store the filepath in session for the map route
-            session['current_file'] = filepath
-            app.logger.info(f"Setting session current_file to {filepath}")
-            
-            # Redirect to the map view
-            return redirect(url_for('view_map'))
+            # Redirect to the combined map view
+            return redirect(url_for('view_combined_map'))
             
         except Exception as e:
             app.logger.error(f"Error during file upload: {str(e)}")
-            flash(f'Error uploading file: {str(e)}', 'danger')
-            return render_template('upload.html', title='Upload File', form=form)
+            flash(f'Error uploading files: {str(e)}', 'danger')
+            return render_template('upload.html', title='Upload Files', form=form)
     
-    return render_template('upload.html', title='Upload File', form=form)
+    return render_template('upload.html', title='Upload Files', form=form)
 
 @app.route('/map')
 def view_map():
@@ -405,4 +417,159 @@ def ftp_settings():
         flash('FTP settings saved successfully', 'success')
         return redirect(url_for('index'))
     
-    return render_template('ftp_settings.html', title='FTP Settings', form=form) 
+    return render_template('ftp_settings.html', title='FTP Settings', form=form)
+
+# Utility function to merge emptyings data from multiple files
+def merge_emptyings_data(file_paths):
+    """Merge data from multiple CSV files into a single list of emptyings"""
+    all_emptyings = []
+    file_stats = {}
+    
+    for filepath in file_paths:
+        try:
+            emptyings = read_emptyings_from_csv(filepath)
+            filename = os.path.basename(filepath)
+            file_stats[filename] = {
+                'count': len(emptyings),
+                'valid_coords': 0,
+                'waste_types': {}
+            }
+            
+            # Process each emptying
+            for emptying in emptyings:
+                # Add a source file attribute for tracking
+                emptying.source_file = filename
+                
+                # Add to the combined list
+                all_emptyings.append(emptying)
+                
+                # Update file stats
+                if (emptying.latitude != 0.0 or emptying.longitude != 0.0) and \
+                   (-90 <= emptying.latitude <= 90) and (-180 <= emptying.longitude <= 180):
+                    file_stats[filename]['valid_coords'] += 1
+                
+                # Track waste types per file
+                waste_type = emptying.waste_type.lower()
+                file_stats[filename]['waste_types'][waste_type] = file_stats[filename]['waste_types'].get(waste_type, 0) + 1
+        
+        except Exception as e:
+            app.logger.error(f"Error processing file {filepath}: {str(e)}")
+            # Continue with other files
+    
+    return all_emptyings, file_stats
+
+@app.route('/combined-map')
+def view_combined_map():
+    file_paths = session.get('current_files', [])
+    app.logger.info(f"Attempting to read files: {file_paths}")
+    
+    if not file_paths:
+        app.logger.warning("No file paths in session")
+        flash('No files selected. Please upload files first.', 'warning')
+        return redirect(url_for('upload_file'))
+    
+    # Verify all files exist
+    missing_files = [fp for fp in file_paths if not os.path.exists(fp)]
+    if missing_files:
+        app.logger.error(f"Files do not exist: {missing_files}")
+        flash('Some uploaded files could not be found. Please upload files again.', 'warning')
+        return redirect(url_for('upload_file'))
+    
+    try:
+        # Merge data from all files
+        all_emptyings, file_stats = merge_emptyings_data(file_paths)
+        app.logger.info(f"Successfully read {len(all_emptyings)} total records from {len(file_paths)} files")
+        
+        # Prepare data for the map
+        map_data = {
+            'points': [],
+            'center': [41.9028, 12.4964]  # Default center: Rome, Italy
+        }
+        
+        # Statistics
+        total_records = len(all_emptyings)
+        valid_coords = 0
+        waste_types = {}
+        
+        # Process valid emptyings
+        for emptying in all_emptyings:
+            # Skip invalid coordinates
+            if (emptying.latitude == 0.0 and emptying.longitude == 0.0) or \
+               not (-90 <= emptying.latitude <= 90) or not (-180 <= emptying.longitude <= 180):
+                continue
+            
+            valid_coords += 1
+            
+            # Track waste types
+            waste_type = emptying.waste_type.lower()
+            waste_types[waste_type] = waste_types.get(waste_type, 0) + 1
+            
+            # Determine marker color based on waste type using standard waste sorting colors
+            marker_color = 'grey'  # Default color for residual/unknown waste
+            
+            # Standard waste type colors
+            if 'organic' in waste_type or 'food' in waste_type or 'compost' in waste_type:
+                marker_color = 'brown'
+            elif 'plastic' in waste_type:
+                marker_color = 'yellow'
+            elif 'paper' in waste_type or 'cardboard' in waste_type:
+                marker_color = 'dodgerblue'
+            elif 'glass' in waste_type:
+                marker_color = 'green'
+            elif 'residual' in waste_type or 'non-recycl' in waste_type or 'general' in waste_type:
+                marker_color = 'grey'
+            elif 'metal' in waste_type or 'aluminum' in waste_type:
+                marker_color = 'cadetblue'
+            elif 'electronic' in waste_type or 'ewaste' in waste_type:
+                marker_color = 'darkred'
+            
+            # Add point data
+            map_data['points'].append({
+                'lat': emptying.latitude,
+                'lng': emptying.longitude,
+                'tag_code': emptying.tag_code,
+                'waste_type': emptying.waste_type,
+                'weight': emptying.weight,
+                'timestamp': emptying.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                'color': marker_color,
+                'source_file': getattr(emptying, 'source_file', 'unknown')
+            })
+        
+        # Calculate map center if there are valid points
+        if valid_coords > 0:
+            sum_lat = sum(point['lat'] for point in map_data['points'])
+            sum_lng = sum(point['lng'] for point in map_data['points'])
+            map_data['center'] = [sum_lat / valid_coords, sum_lng / valid_coords]
+        
+        # Prepare statistics for display
+        stats = {
+            'total_records': total_records,
+            'valid_coords': valid_coords,
+            'waste_types': waste_types,
+            'file_count': len(file_paths),
+            'file_stats': file_stats
+        }
+        
+        # Prepare legend data with standard waste type colors
+        legend_items = [
+            {'name': 'Organic', 'color': 'brown'},
+            {'name': 'Residual', 'color': 'grey'},
+            {'name': 'Plastic', 'color': 'yellow'},
+            {'name': 'Paper', 'color': 'dodgerblue'},
+            {'name': 'Glass', 'color': 'green'},
+            {'name': 'Metal', 'color': 'cadetblue'},
+            {'name': 'Electronic', 'color': 'darkred'}
+        ]
+        
+        return render_template('map.html', 
+                            title='Combined Map View',
+                            map_data=map_data, 
+                            stats=stats, 
+                            legend_items=legend_items,
+                            is_combined=True,
+                            file_stats=file_stats)
+        
+    except Exception as e:
+        app.logger.error(f"Error processing files: {str(e)}")
+        flash(f'Error reading or processing files: {str(e)}', 'danger')
+        return redirect(url_for('upload_file')) 
