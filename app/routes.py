@@ -55,6 +55,7 @@ def upload_file():
                     elif not os.access(upload_dir, os.W_OK):
                          app.logger.error(f"Upload directory is not writable: {upload_dir}")
                          flash(f'Error: Upload directory is not writable.', 'danger')
+                         # Return here to stop processing if directory is bad
                          return render_template('upload.html', title='Upload Files', form=form)
 
                     f.save(filepath)
@@ -63,11 +64,11 @@ def upload_file():
                     if not os.path.exists(filepath):
                         app.logger.error(f"File was not saved! Path does not exist: {filepath}")
                         flash(f'Error: File upload failed for {filename}. The file could not be saved.', 'danger')
-                        continue 
+                        continue # Continue to the next file in the loop
                         
                     uploaded_filepaths.append(filepath)
                     uploaded_filenames.append(filename) # Store original filename
-            
+            # This block should be outside the for loop but inside the try block
             if not uploaded_filepaths:
                 flash('No valid files were uploaded.', 'warning')
                 return render_template('upload.html', title='Upload Files', form=form)
@@ -79,6 +80,7 @@ def upload_file():
             # Redirect to the file selection page instead of map view
             return redirect(url_for('select_files')) 
             
+        # Except block aligned with the try block
         except Exception as e:
             app.logger.error(f"Error during file upload: {str(e)}", exc_info=True)
             flash(f'An unexpected error occurred during upload: {str(e)}', 'danger')
@@ -110,16 +112,13 @@ def view_map():
              if uploaded_files_info:
                  return redirect(url_for('select_files'))
              else:
+                 # Correct indentation for this return
                  return redirect(url_for('upload_file'))
         
-        # Store selected files in session *temporarily* for potential GET refresh? Or just process them.
-        # Let's just process them directly for now.
         filepaths_to_process = selected_filepaths
         source = "POST selection"
         
     else: # Handle GET request (e.g., direct navigation or refresh)
-        # Maybe try to get previously selected files from session? 
-        # For simplicity now, redirect if accessed via GET without prior POST.
         flash('Please select files to view on the map first.', 'info')
         return redirect(url_for('select_files')) # Or upload_file if session is empty
 
@@ -173,7 +172,7 @@ def view_map():
     total_records = len(all_emptyings)
     valid_coords = 0
     waste_types = {}
-
+    
     for emptying in all_emptyings:
         if (emptying.latitude == 0.0 and emptying.longitude == 0.0) or \
            not (-90 <= emptying.latitude <= 90) or not (-180 <= emptying.longitude <= 180):
@@ -236,101 +235,96 @@ def ftp_browser():
         session['ftp_port'] = 21
         session['ftp_user'] = 'user'
         session['ftp_password'] = ''
-    
+        session['connected'] = False # Ensure disconnected state initially
+        session['current_dir'] = '/' 
+        
     form = FTPSettingsForm()
+    error_message = None
+    vercel_warning = None
+    file_list = []
     
-    # Pre-populate form with session values
-    if request.method == 'GET':
-        form.host.data = session.get('ftp_host')
-        form.port.data = session.get('ftp_port')
-        form.username.data = session.get('ftp_user')
-        form.password.data = session.get('ftp_password')
-    
-    # Process form submission (connect button)
+    # Check if running on Vercel for warning
+    if os.environ.get('VERCEL'):
+        vercel_warning = "Note: FTP functionality may be limited or unreliable on Vercel's serverless platform due to network restrictions and timeouts."
+        
+    # Handle form submission to connect/update settings
     if form.validate_on_submit():
+        app.logger.info("FTP settings form submitted")
         # Save settings to session
         session['ftp_host'] = form.host.data
         session['ftp_port'] = form.port.data
         session['ftp_user'] = form.username.data
         session['ftp_password'] = form.password.data
-        
-        # Store the form data in session for FTP connection
-        session['connected'] = True
-        session['current_dir'] = '/'
-        
-        # Redirect to prevent form resubmission
+        session['connected'] = True # Assume connection attempt on submit
+        session['current_dir'] = '/' # Reset directory on new connection attempt
+        # Redirect to the same page using GET to attempt connection
         return redirect(url_for('ftp_browser'))
-    
-    # If we're connected, list directory contents
-    file_list = []
-    error_message = None
-    
-    if session.get('connected'):
-        app.logger.info(f"Attempting FTP connection to {session.get('ftp_host')}:{session.get('ftp_port')}")
-        try:
-            with ftplib.FTP() as ftp:
-                # Set a shorter timeout for Vercel's serverless environment
-                timeout = 5  # reduced from 10 seconds to 5 seconds
-                # Connect to server
-                app.logger.info(f"Connecting to FTP with timeout {timeout}s")
-                ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
-                ftp.login(session['ftp_user'], session['ftp_password'])
-                ftp.set_pasv(True)
-                
-                # Navigate to current directory if not at root
-                if session['current_dir'] != '/':
-                    ftp.cwd(session['current_dir'])
-                
-                # Get directory listing
-                files = []
-                ftp.dir(files.append)
-                app.logger.info(f"Successfully retrieved directory listing with {len(files)} items")
-                
-                # Parse listing
-                for item in files:
-                    if item.startswith('d'):
-                        # Directory
-                        name = item.split()[-1]
-                        file_list.append({
-                            'name': name,
-                            'is_dir': True,
-                            'size': '-',
-                            'date': ' '.join(item.split()[5:8])
-                        })
-                    else:
-                        # File
+
+    # Handle GET request: Attempt connection and list files if connected flag is true
+    if request.method == 'GET':
+        # Pre-populate form with session values
+        form.host.data = session.get('ftp_host')
+        form.port.data = session.get('ftp_port')
+        form.username.data = session.get('ftp_user')
+        # Do not pre-fill password for security
+        # form.password.data = session.get('ftp_password') 
+        
+        # Attempt to list files only if 'connected' flag is set
+        if session.get('connected'):
+            app.logger.info(f"Attempting FTP connection to {session.get('ftp_host')}:{session.get('ftp_port')} in directory {session.get('current_dir')}")
+            try:
+                with ftplib.FTP() as ftp:
+                    timeout = 5 # Keep reduced timeout
+                    app.logger.info(f"Connecting to FTP with timeout {timeout}s")
+                    ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+                    ftp.login(session['ftp_user'], session['ftp_password'])
+                    ftp.set_pasv(True) 
+                    
+                    current_dir_session = session.get('current_dir', '/')
+                    if current_dir_session != '/':
+                        app.logger.info(f"Changing directory to {current_dir_session}")
+                        ftp.cwd(current_dir_session)
+                    
+                    app.logger.info(f"Retrieving directory listing for {ftp.pwd()}")
+                    files_raw = []
+                    ftp.dir(files_raw.append)
+                    app.logger.info(f"Successfully retrieved {len(files_raw)} raw listing items")
+
+                    # Parse listing (add basic parsing)
+                    for item in files_raw:
                         parts = item.split()
-                        name = parts[-1]
-                        size = parts[4]
-                        date = ' '.join(parts[5:8])
+                        if len(parts) < 9: continue # Basic check for valid line
+                        
+                        name = ' '.join(parts[8:])
+                        is_dir = item.startswith('d')
+                        size = parts[4] if not is_dir else '-'
+                        date_str = ' '.join(parts[5:8])
+                        
                         file_list.append({
                             'name': name,
-                            'is_dir': False,
+                            'is_dir': is_dir,
                             'size': size,
-                            'date': date
+                            'date': date_str
                         })
-        except ftplib.error_timeout as e:
-            app.logger.error(f"FTP connection timed out: {str(e)}")
-            error_message = "FTP connection timed out. This may happen on serverless platforms like Vercel. Try again with a different server or reduce the port number."
-            session['connected'] = False
-        except ConnectionRefusedError as e:
-            app.logger.error(f"FTP connection refused: {str(e)}")
-            error_message = "FTP connection refused. Please verify the server is running and accessible."
-            session['connected'] = False
-        except ftplib.error_perm as e:
-            app.logger.error(f"FTP permission error: {str(e)}")
-            error_message = f"FTP permission error: {str(e)}"
-            session['connected'] = False
-        except Exception as e:
-            app.logger.error(f"FTP Error: {str(e)}")
-            error_message = f"FTP Error: {str(e)}"
-            session['connected'] = False
-    
-    # Provide a Vercel-specific warning if running on Vercel
-    vercel_warning = None
-    if os.environ.get('VERCEL'):
-        vercel_warning = "Note: FTP functionality may be limited on Vercel's serverless platform due to network restrictions."
-    
+                    app.logger.info(f"Parsed {len(file_list)} items from directory listing")
+
+            except ftplib.error_timeout as e:
+                app.logger.error(f"FTP connection timed out: {str(e)}", exc_info=True)
+                error_message = "FTP connection timed out. Please verify server details and network accessibility."
+                session['connected'] = False # Mark as disconnected on error
+            except ConnectionRefusedError as e:
+                app.logger.error(f"FTP connection refused: {str(e)}", exc_info=True)
+                error_message = "FTP connection refused. Ensure the server is running and accessible."
+                session['connected'] = False
+            except ftplib.error_perm as e:
+                app.logger.error(f"FTP permission error: {str(e)}", exc_info=True)
+                error_message = f"FTP permission error: {str(e)}. Check username/password and permissions."
+                session['connected'] = False
+            except Exception as e:
+                app.logger.error(f"An unexpected FTP error occurred: {str(e)}", exc_info=True)
+                error_message = f"An unexpected FTP error occurred: {str(e)}"
+                session['connected'] = False
+                
     return render_template('ftp_browser.html', title='FTP Browser', 
                           form=form, files=file_list, 
                           connected=session.get('connected', False),
@@ -341,90 +335,113 @@ def ftp_browser():
 @app.route('/ftp_navigate', methods=['POST'])
 def ftp_navigate():
     if not session.get('connected'):
-        return jsonify({'success': False, 'error': 'Not connected to FTP server'})
+        app.logger.warning("FTP navigate called but not connected.")
+        return jsonify({'success': False, 'error': 'Not connected to FTP server. Please connect first.'}), 400
     
     target_dir = request.form.get('dir')
-    current_dir = session.get('current_dir', '/')
+    if not target_dir:
+        return jsonify({'success': False, 'error': 'No target directory specified.'}), 400
+        
+    current_dir_session = session.get('current_dir', '/')
+    app.logger.info(f"FTP navigate request: from {current_dir_session} to {target_dir}")
     
     try:
         with ftplib.FTP() as ftp:
-            # Connect to server with shorter timeout
-            timeout = 5  # reduced timeout for Vercel's serverless environment
-            app.logger.info(f"FTP navigate: Connecting with timeout {timeout}s")
+            timeout = 5
             ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
             ftp.login(session['ftp_user'], session['ftp_password'])
             ftp.set_pasv(True)
             
-            # Navigate to current directory first
-            if current_dir != '/':
-                ftp.cwd(current_dir)
+            # Navigate to current directory first (for safety)
+            if current_dir_session != '/':
+                ftp.cwd(current_dir_session)
             
             # Navigate to target directory
-            if target_dir == '..':
-                # Go up one level
-                ftp.cwd('..')
-            else:
-                # Go into subdirectory
-                ftp.cwd(target_dir)
+            ftp.cwd(target_dir) # ftplib handles '..' 
             
-            # Update current directory
             new_dir = ftp.pwd()
             session['current_dir'] = new_dir
-            
+            app.logger.info(f"FTP navigate successful. New directory: {new_dir}")
             return jsonify({'success': True, 'new_dir': new_dir})
-    except ftplib.error_timeout as e:
-        app.logger.error(f"FTP navigate: Connection timed out: {str(e)}")
-        return jsonify({'success': False, 'error': 'FTP connection timed out. This may happen on serverless platforms.'})
+            
+    except ftplib.error_timeout:
+        app.logger.error("FTP navigate: Connection timed out.")
+        return jsonify({'success': False, 'error': 'FTP connection timed out during navigation.'}), 500
+    except ftplib.error_perm as e:
+        app.logger.error(f"FTP navigate: Permission error: {str(e)}")
+        return jsonify({'success': False, 'error': f'Permission error: {str(e)}'}), 500
     except Exception as e:
-        app.logger.error(f"FTP navigate error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
+        app.logger.error(f"FTP navigate: Unexpected error: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 @app.route('/ftp_download', methods=['POST'])
 def ftp_download():
     if not session.get('connected'):
-        return jsonify({'success': False, 'error': 'Not connected to FTP server'})
+        app.logger.warning("FTP download called but not connected.")
+        return jsonify({'success': False, 'error': 'Not connected to FTP server. Please connect first.'}), 400
     
     filename = request.form.get('file')
-    current_dir = session.get('current_dir', '/')
+    if not filename:
+         return jsonify({'success': False, 'error': 'No filename specified for download.'}), 400
+         
+    current_dir_session = session.get('current_dir', '/')
+    app.logger.info(f"FTP download request: File '{filename}' from directory '{current_dir_session}'")
     
     try:
-        # Create a unique filename for the download
-        unique_filename = f"{uuid.uuid4().hex}_{filename}"
+        # Securely create local path in the upload folder
+        local_filename = secure_filename(filename)
+        unique_filename = f"{uuid.uuid4().hex}_{local_filename}"
         local_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         
+        # Ensure upload folder exists and is writable
+        upload_dir = app.config['UPLOAD_FOLDER']
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir, exist_ok=True)
+        elif not os.access(upload_dir, os.W_OK):
+            app.logger.error(f"FTP download: Upload directory not writable: {upload_dir}")
+            return jsonify({'success': False, 'error': 'Server upload directory is not writable.'}), 500
+            
         with ftplib.FTP() as ftp:
-            # Connect to server with shorter timeout
-            timeout = 5  # reduced timeout for Vercel's serverless environment
-            app.logger.info(f"FTP download: Connecting with timeout {timeout}s")
+            timeout = 5
             ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
             ftp.login(session['ftp_user'], session['ftp_password'])
             ftp.set_pasv(True)
             
-            # Navigate to current directory
-            if current_dir != '/':
-                ftp.cwd(current_dir)
+            if current_dir_session != '/':
+                ftp.cwd(current_dir_session)
             
-            # Download the file
-            app.logger.info(f"Downloading file {filename} to {local_path}")
+            app.logger.info(f"Attempting to download FTP file '{filename}' to local path '{local_path}'")
             with open(local_path, 'wb') as local_file:
+                # Use a callback to log progress or check size if needed
+                # ftp.retrbinary(f'RETR {filename}', local_file.write, blocksize=8192)
                 ftp.retrbinary(f'RETR {filename}', local_file.write)
             
-            app.logger.info(f"File download complete")
+            app.logger.info(f"FTP download complete for {filename}")
         
-        # Store the filepath in session for the map route
-        session['current_file'] = local_path
+        # Store the filepath of the *downloaded* file for map view
+        session['uploaded_files_info'] = [(filename, local_path)] # Overwrite session with the single downloaded file
+        app.logger.info(f"Set session uploaded_files_info for downloaded file: {session['uploaded_files_info']}")
         
+        # Redirect to file selection page, which will show the single downloaded file
         return jsonify({
             'success': True, 
-            'message': f'File {filename} downloaded successfully',
-            'redirect': url_for('view_map')
+            'message': f'File {filename} downloaded successfully.',
+            'redirect': url_for('select_files') # Redirect to selection page
         })
-    except ftplib.error_timeout as e:
-        app.logger.error(f"FTP download: Connection timed out: {str(e)}")
-        return jsonify({'success': False, 'error': 'FTP connection timed out. This may happen on serverless platforms.'})
+        
+    except ftplib.error_timeout:
+        app.logger.error("FTP download: Connection timed out.")
+        return jsonify({'success': False, 'error': 'FTP connection timed out during download.'}), 500
+    except ftplib.error_perm as e:
+        app.logger.error(f"FTP download: Permission error: {str(e)}")
+        # Try to delete partially downloaded file if it exists
+        if os.path.exists(local_path): os.remove(local_path)
+        return jsonify({'success': False, 'error': f'Permission error during download: {str(e)}'}), 500
     except Exception as e:
-        app.logger.error(f"FTP download error: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
+        app.logger.error(f"FTP download: Unexpected error: {str(e)}", exc_info=True)
+        # Try to delete partially downloaded file if it exists
+        if 'local_path' in locals() and os.path.exists(local_path): os.remove(local_path)
+        return jsonify({'success': False, 'error': f'An unexpected error occurred during download: {str(e)}'}), 500
 
 @app.route('/disconnect', methods=['POST'])
 def disconnect():
