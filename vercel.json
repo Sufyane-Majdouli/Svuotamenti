@@ -3,7 +3,11 @@
   "builds": [
     {
       "src": "server.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": { 
+        "maxDuration": 60,
+        "memory": 1024
+      }
     }
   ],
   "routes": [
@@ -12,12 +16,6 @@
       "dest": "/server.py"
     }
   ],
-  "functions": {
-    "server.py": { 
-      "maxDuration": 60,   
-      "memory": 1024       
-    }
-  },
   "env": {
     "PYTHONUNBUFFERED": "1",
     "FLASK_ENV": "production",
