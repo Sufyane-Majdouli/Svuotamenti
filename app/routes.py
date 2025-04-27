@@ -272,58 +272,67 @@ def ftp_browser():
         # Attempt to list files only if 'connected' flag is set
         if session.get('connected'):
             app.logger.info(f"Attempting FTP connection to {session.get('ftp_host')}:{session.get('ftp_port')} in directory {session.get('current_dir')}")
+            ftp = None # Initialize ftp variable
             try:
-                with ftplib.FTP() as ftp:
-                    timeout = 5 # Keep reduced timeout
-                    app.logger.info(f"Connecting to FTP with timeout {timeout}s")
-                    ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
-                    ftp.login(session['ftp_user'], session['ftp_password'])
-                    ftp.set_pasv(True) 
-                    
-                    current_dir_session = session.get('current_dir', '/')
-                    if current_dir_session != '/':
-                        app.logger.info(f"Changing directory to {current_dir_session}")
-                        ftp.cwd(current_dir_session)
-                    
-                    app.logger.info(f"Retrieving directory listing for {ftp.pwd()}")
-                    files_raw = []
-                    ftp.dir(files_raw.append)
-                    app.logger.info(f"Successfully retrieved {len(files_raw)} raw listing items")
+                ftp = ftplib.FTP() # Create FTP object outside with block for finally
+                timeout = 5 
+                app.logger.info(f"Connecting to FTP with timeout {timeout}s")
+                ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+                ftp.login(session['ftp_user'], session['ftp_password'])
+                ftp.set_pasv(True) 
+                
+                current_dir_session = session.get('current_dir', '/')
+                if current_dir_session != '/':
+                    app.logger.info(f"Changing directory to {current_dir_session}")
+                    ftp.cwd(current_dir_session)
+                
+                app.logger.info(f"Retrieving directory listing for {ftp.pwd()}")
+                files_raw = []
+                ftp.dir(files_raw.append)
+                app.logger.info(f"Successfully retrieved {len(files_raw)} raw listing items")
 
-                    # Parse listing (add basic parsing)
-                    for item in files_raw:
-                        parts = item.split()
-                        if len(parts) < 9: continue # Basic check for valid line
-                        
-                        name = ' '.join(parts[8:])
-                        is_dir = item.startswith('d')
-                        size = parts[4] if not is_dir else '-'
-                        date_str = ' '.join(parts[5:8])
-                        
-                        file_list.append({
-                            'name': name,
-                            'is_dir': is_dir,
-                            'size': size,
-                            'date': date_str
-                        })
-                    app.logger.info(f"Parsed {len(file_list)} items from directory listing")
+                # Parse listing (add basic parsing)
+                for item in files_raw:
+                    parts = item.split()
+                    if len(parts) < 9: continue # Basic check for valid line
+                    
+                    name = ' '.join(parts[8:])
+                    is_dir = item.startswith('d')
+                    size = parts[4] if not is_dir else '-'
+                    date_str = ' '.join(parts[5:8])
+                    
+                    file_list.append({
+                        'name': name,
+                        'is_dir': is_dir,
+                        'size': size,
+                        'date': date_str
+                    })
+                app.logger.info(f"Parsed {len(file_list)} items from directory listing")
 
             except ftplib.error_timeout as e:
                 app.logger.error(f"FTP connection timed out: {str(e)}", exc_info=True)
-                error_message = "FTP connection timed out. Please verify server details and network accessibility."
-                session['connected'] = False # Mark as disconnected on error
+                error_message = "FTP connection timed out. Server might be slow or unreachable from Vercel."
+                session['connected'] = False 
             except ConnectionRefusedError as e:
                 app.logger.error(f"FTP connection refused: {str(e)}", exc_info=True)
-                error_message = "FTP connection refused. Ensure the server is running and accessible."
+                error_message = "FTP connection refused. Ensure server details are correct and firewall allows connection."
                 session['connected'] = False
             except ftplib.error_perm as e:
                 app.logger.error(f"FTP permission error: {str(e)}", exc_info=True)
-                error_message = f"FTP permission error: {str(e)}. Check username/password and permissions."
+                error_message = f"FTP permission error: {str(e)}. Check credentials/permissions."
                 session['connected'] = False
             except Exception as e:
                 app.logger.error(f"An unexpected FTP error occurred: {str(e)}", exc_info=True)
                 error_message = f"An unexpected FTP error occurred: {str(e)}"
                 session['connected'] = False
+            finally:
+                # Ensure connection is closed
+                if ftp and ftp.sock:
+                    try:
+                        app.logger.info("Closing FTP connection in finally block (ftp_browser)")
+                        ftp.quit()
+                    except Exception as e_quit:
+                        app.logger.error(f"Error during FTP quit: {str(e_quit)}")
                 
     return render_template('ftp_browser.html', title='FTP Browser', 
                           form=form, files=file_list, 
@@ -345,24 +354,25 @@ def ftp_navigate():
     current_dir_session = session.get('current_dir', '/')
     app.logger.info(f"FTP navigate request: from {current_dir_session} to {target_dir}")
     
+    ftp = None
     try:
-        with ftplib.FTP() as ftp:
-            timeout = 5
-            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
-            ftp.login(session['ftp_user'], session['ftp_password'])
-            ftp.set_pasv(True)
-            
-            # Navigate to current directory first (for safety)
-            if current_dir_session != '/':
-                ftp.cwd(current_dir_session)
-            
-            # Navigate to target directory
-            ftp.cwd(target_dir) # ftplib handles '..' 
-            
-            new_dir = ftp.pwd()
-            session['current_dir'] = new_dir
-            app.logger.info(f"FTP navigate successful. New directory: {new_dir}")
-            return jsonify({'success': True, 'new_dir': new_dir})
+        ftp = ftplib.FTP()
+        timeout = 5
+        ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+        ftp.login(session['ftp_user'], session['ftp_password'])
+        ftp.set_pasv(True)
+        
+        # Navigate to current directory first (for safety)
+        if current_dir_session != '/':
+            ftp.cwd(current_dir_session)
+        
+        # Navigate to target directory
+        ftp.cwd(target_dir) # ftplib handles '..' 
+        
+        new_dir = ftp.pwd()
+        session['current_dir'] = new_dir
+        app.logger.info(f"FTP navigate successful. New directory: {new_dir}")
+        return jsonify({'success': True, 'new_dir': new_dir})
             
     except ftplib.error_timeout:
         app.logger.error("FTP navigate: Connection timed out.")
@@ -373,6 +383,13 @@ def ftp_navigate():
     except Exception as e:
         app.logger.error(f"FTP navigate: Unexpected error: {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': f'An unexpected error occurred: {str(e)}'}), 500
+    finally:
+        if ftp and ftp.sock:
+            try:
+                app.logger.info("Closing FTP connection in finally block (ftp_navigate)")
+                ftp.quit()
+            except Exception as e_quit:
+                app.logger.error(f"Error during FTP quit: {str(e_quit)}")
 
 @app.route('/ftp_download', methods=['POST'])
 def ftp_download():
@@ -387,6 +404,8 @@ def ftp_download():
     current_dir_session = session.get('current_dir', '/')
     app.logger.info(f"FTP download request: File '{filename}' from directory '{current_dir_session}'")
     
+    local_path = None # Initialize for finally block
+    ftp = None
     try:
         # Securely create local path in the upload folder
         local_filename = secure_filename(filename)
@@ -401,47 +420,51 @@ def ftp_download():
             app.logger.error(f"FTP download: Upload directory not writable: {upload_dir}")
             return jsonify({'success': False, 'error': 'Server upload directory is not writable.'}), 500
             
-        with ftplib.FTP() as ftp:
-            timeout = 5
-            ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
-            ftp.login(session['ftp_user'], session['ftp_password'])
-            ftp.set_pasv(True)
-            
-            if current_dir_session != '/':
-                ftp.cwd(current_dir_session)
-            
-            app.logger.info(f"Attempting to download FTP file '{filename}' to local path '{local_path}'")
-            with open(local_path, 'wb') as local_file:
-                # Use a callback to log progress or check size if needed
-                # ftp.retrbinary(f'RETR {filename}', local_file.write, blocksize=8192)
-                ftp.retrbinary(f'RETR {filename}', local_file.write)
-            
-            app.logger.info(f"FTP download complete for {filename}")
+        ftp = ftplib.FTP()
+        timeout = 5
+        ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+        ftp.login(session['ftp_user'], session['ftp_password'])
+        ftp.set_pasv(True)
+        
+        if current_dir_session != '/':
+            ftp.cwd(current_dir_session)
+        
+        app.logger.info(f"Attempting to download FTP file '{filename}' to local path '{local_path}'")
+        with open(local_path, 'wb') as local_file:
+            ftp.retrbinary(f'RETR {filename}', local_file.write)
+        
+        app.logger.info(f"FTP download complete for {filename}")
         
         # Store the filepath of the *downloaded* file for map view
-        session['uploaded_files_info'] = [(filename, local_path)] # Overwrite session with the single downloaded file
+        session['uploaded_files_info'] = [(filename, local_path)]
         app.logger.info(f"Set session uploaded_files_info for downloaded file: {session['uploaded_files_info']}")
         
         # Redirect to file selection page, which will show the single downloaded file
         return jsonify({
             'success': True, 
             'message': f'File {filename} downloaded successfully.',
-            'redirect': url_for('select_files') # Redirect to selection page
+            'redirect': url_for('select_files')
         })
         
     except ftplib.error_timeout:
         app.logger.error("FTP download: Connection timed out.")
+        if local_path and os.path.exists(local_path): os.remove(local_path) # Clean up partial download
         return jsonify({'success': False, 'error': 'FTP connection timed out during download.'}), 500
     except ftplib.error_perm as e:
         app.logger.error(f"FTP download: Permission error: {str(e)}")
-        # Try to delete partially downloaded file if it exists
-        if os.path.exists(local_path): os.remove(local_path)
+        if local_path and os.path.exists(local_path): os.remove(local_path)
         return jsonify({'success': False, 'error': f'Permission error during download: {str(e)}'}), 500
     except Exception as e:
         app.logger.error(f"FTP download: Unexpected error: {str(e)}", exc_info=True)
-        # Try to delete partially downloaded file if it exists
-        if 'local_path' in locals() and os.path.exists(local_path): os.remove(local_path)
+        if local_path and os.path.exists(local_path): os.remove(local_path)
         return jsonify({'success': False, 'error': f'An unexpected error occurred during download: {str(e)}'}), 500
+    finally:
+         if ftp and ftp.sock:
+            try:
+                app.logger.info("Closing FTP connection in finally block (ftp_download)")
+                ftp.quit()
+            except Exception as e_quit:
+                app.logger.error(f"Error during FTP quit: {str(e_quit)}")
 
 @app.route('/disconnect', methods=['POST'])
 def disconnect():
