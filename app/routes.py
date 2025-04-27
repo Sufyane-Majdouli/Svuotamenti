@@ -251,7 +251,14 @@ def ftp_browser():
     if form.validate_on_submit():
         app.logger.info("FTP settings form submitted")
         # Save settings to session
-        session['ftp_host'] = form.host.data
+        # Remove http:// or ftp:// prefix if present in host
+        host = form.host.data
+        if host.startswith(('http://', 'https://', 'ftp://')):
+            # Extract only the hostname part
+            host = host.split('://', 1)[1]
+            app.logger.info(f"Removed protocol prefix from host: {form.host.data} -> {host}")
+        
+        session['ftp_host'] = host
         session['ftp_port'] = form.port.data
         session['ftp_user'] = form.username.data
         session['ftp_password'] = form.password.data
@@ -271,13 +278,34 @@ def ftp_browser():
         
         # Attempt to list files only if 'connected' flag is set
         if session.get('connected'):
-            app.logger.info(f"Attempting FTP connection to {session.get('ftp_host')}:{session.get('ftp_port')} in directory {session.get('current_dir')}")
+            host = session.get('ftp_host', '')
+            # Remove any protocol prefix if somehow still present
+            if host.startswith(('http://', 'https://', 'ftp://')):
+                host = host.split('://', 1)[1]
+                session['ftp_host'] = host
+                
+            app.logger.info(f"Attempting FTP connection to {host}:{session.get('ftp_port')} in directory {session.get('current_dir')}")
             ftp = None # Initialize ftp variable
             try:
+                # Check for Vercel environment with a more detailed error
+                if os.environ.get('VERCEL') and not os.environ.get('VERCEL_DEV'):
+                    # Create more descriptive error for Vercel deployments
+                    error_message = ("FTP connections are not supported in Vercel's serverless production environment due "
+                                    "to network and timeout limitations. Please use the file upload feature instead, "
+                                    "or run this application locally for FTP functionality.")
+                    app.logger.warning(error_message)
+                    session['connected'] = False
+                    return render_template('ftp_browser.html', title='FTP Browser', 
+                                          form=form, files=file_list, 
+                                          connected=False,
+                                          current_dir=session.get('current_dir', '/'),
+                                          error=error_message,
+                                          vercel_warning=vercel_warning)
+                                          
                 ftp = ftplib.FTP() # Create FTP object outside with block for finally
                 timeout = 5 
                 app.logger.info(f"Connecting to FTP with timeout {timeout}s")
-                ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+                ftp.connect(host, session['ftp_port'], timeout=timeout)
                 ftp.login(session['ftp_user'], session['ftp_password'])
                 ftp.set_pasv(True) 
                 
@@ -347,18 +375,30 @@ def ftp_navigate():
         app.logger.warning("FTP navigate called but not connected.")
         return jsonify({'success': False, 'error': 'Not connected to FTP server. Please connect first.'}), 400
     
+    # Check for Vercel environment with a detailed error
+    if os.environ.get('VERCEL') and not os.environ.get('VERCEL_DEV'):
+        error_msg = "FTP connections are not supported in Vercel's serverless environment."
+        app.logger.warning(error_msg)
+        return jsonify({'success': False, 'error': error_msg}), 400
+    
     target_dir = request.form.get('dir')
     if not target_dir:
         return jsonify({'success': False, 'error': 'No target directory specified.'}), 400
         
     current_dir_session = session.get('current_dir', '/')
+    host = session.get('ftp_host', '')
+    # Remove any protocol prefix if somehow still present
+    if host.startswith(('http://', 'https://', 'ftp://')):
+        host = host.split('://', 1)[1]
+        session['ftp_host'] = host
+        
     app.logger.info(f"FTP navigate request: from {current_dir_session} to {target_dir}")
     
     ftp = None
     try:
         ftp = ftplib.FTP()
         timeout = 5
-        ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+        ftp.connect(host, session['ftp_port'], timeout=timeout)
         ftp.login(session['ftp_user'], session['ftp_password'])
         ftp.set_pasv(True)
         
@@ -397,11 +437,23 @@ def ftp_download():
         app.logger.warning("FTP download called but not connected.")
         return jsonify({'success': False, 'error': 'Not connected to FTP server. Please connect first.'}), 400
     
+    # Check for Vercel environment with a detailed error
+    if os.environ.get('VERCEL') and not os.environ.get('VERCEL_DEV'):
+        error_msg = "FTP connections are not supported in Vercel's serverless environment."
+        app.logger.warning(error_msg)
+        return jsonify({'success': False, 'error': error_msg}), 400
+    
     filename = request.form.get('file')
     if not filename:
          return jsonify({'success': False, 'error': 'No filename specified for download.'}), 400
          
     current_dir_session = session.get('current_dir', '/')
+    host = session.get('ftp_host', '')
+    # Remove any protocol prefix if somehow still present
+    if host.startswith(('http://', 'https://', 'ftp://')):
+        host = host.split('://', 1)[1]
+        session['ftp_host'] = host
+    
     app.logger.info(f"FTP download request: File '{filename}' from directory '{current_dir_session}'")
     
     local_path = None # Initialize for finally block
@@ -422,7 +474,7 @@ def ftp_download():
             
         ftp = ftplib.FTP()
         timeout = 5
-        ftp.connect(session['ftp_host'], session['ftp_port'], timeout=timeout)
+        ftp.connect(host, session['ftp_port'], timeout=timeout)
         ftp.login(session['ftp_user'], session['ftp_password'])
         ftp.set_pasv(True)
         

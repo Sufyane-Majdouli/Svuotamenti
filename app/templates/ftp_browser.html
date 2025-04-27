@@ -2,6 +2,16 @@
 
 {% block content %}
 <div class="row">
+    {% if vercel_warning %}
+    <div class="col-12 mb-4">
+        <div class="alert alert-danger">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Vercel Deployment Warning</h5>
+            <p>{{ vercel_warning }}</p>
+            <p class="mb-0"><strong>Important:</strong> FTP functionality is not expected to work on Vercel's serverless platform. For full FTP support, please run this application locally.</p>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="col-md-4">
         <div class="card shadow mb-4">
             <div class="card-header bg-warning text-dark">
@@ -10,8 +20,8 @@
             <div class="card-body">
                 {% if vercel_warning %}
                 <div class="alert alert-warning mb-3">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    {{ vercel_warning }}
+                    <i class="fas fa-info-circle me-2"></i>
+                    Due to serverless limitations, please use the file upload feature instead for Vercel deployments.
                 </div>
                 {% endif %}
                 
